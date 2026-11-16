@@ -1,0 +1,13 @@
+# secrets and local Supabase state
+.env
+.env.*
+supabase/.temp/
+supabase/.branches/
+*.pem
+vapid-private*.json
+
+# tooling
+node_modules/
+.vscode/
+.DS_Store
+Thumbs.db

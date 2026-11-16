@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theme preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Share+Tech+Mono&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { background: #e4e5ea; font-family: Inter, system-ui, sans-serif; padding: 32px 16px 64px; color: #1c1c22; }
+  .page { max-width: 1280px; margin: 0 auto; }
+  .page h1 { font-size: 26px; margin-bottom: 6px; }
+  .page h1.second { margin-top: 56px; font-size: 20px; }
+  .page p { color: #55555f; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 32px 28px; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .label { font-weight: 700; font-size: 17px; margin-bottom: 4px; }
+  .label span { font-weight: 400; color: #666672; font-size: 14px; margin-left: 8px; }
+
+  /* ---------- shared app mock ---------- */
+  .app { display: grid; grid-template-columns: 170px 1fr; height: 400px; border-radius: var(--frame-r); overflow: hidden;
+         background-color: var(--bg); background-image: var(--grid, none); background-size: var(--grid-size, auto);
+         color: var(--text); font-family: var(--font); border: 1px solid var(--line);
+         box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 13px; margin-top: 8px; }
+  .side { background: var(--side); padding: 16px 12px; border-right: var(--rule, 1px) solid var(--line); }
+  .brand { font-family: var(--head); font-weight: 700; font-size: 17px; margin-bottom: 18px; color: var(--text);
+           text-transform: var(--caps, none); letter-spacing: var(--track, 0); }
+  .brand i { color: var(--accent); font-style: normal; }
+  .nav-h { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 14px 6px 6px; }
+  .nav { display: flex; justify-content: space-between; padding: 7px 8px; border-radius: var(--r); color: var(--text);
+         border-left: var(--nav-bar, 0) solid transparent; }
+  .nav.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-left-color: var(--accent); }
+  .nav small { color: var(--muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--dot-r, 50%); margin-right: 7px; }
+  .main { padding: 18px 20px; overflow: hidden; }
+  .main h2 { font-family: var(--head); font-size: 21px; font-weight: 700; text-transform: var(--caps, none); letter-spacing: var(--track, 0); }
+  .sub { color: var(--muted); margin: 2px 0 12px; font-size: 12px; }
+  .add { border: 1px dashed var(--line-strong, var(--line)); border-radius: var(--r); padding: 9px 12px; color: var(--muted); margin-bottom: 10px; background: var(--card); }
+  .task { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line);
+          border-radius: var(--r); margin-bottom: 7px; box-shadow: var(--shadow); }
+  .box { width: 16px; height: 16px; border: 2px solid var(--muted); border-radius: var(--box-r); flex: none; }
+  .task.done .box { background: var(--accent); border-color: var(--accent); }
+  .task.done .t { text-decoration: line-through; color: var(--muted); }
+  .t { flex: 1; }
+  .chip { font-size: 10.5px; padding: 2px 8px; border-radius: var(--chip-r, 99px); background: var(--accent-soft); color: var(--accent);
+          font-weight: 600; white-space: nowrap; border: var(--chip-b, 0) solid currentColor; }
+  .chip.c { background: var(--claude-soft); color: var(--claude); }
+  .idea { margin-top: 12px; padding: 12px; border-radius: var(--r); background: var(--idea); border: 1px solid var(--line); border-left: var(--idea-bar, 1px) solid var(--idea-bar-c, var(--line)); }
+  .idea b { font-family: var(--head); display: block; margin-bottom: 3px; }
+  .idea span { color: var(--muted); font-size: 12px; }
+
+  /* ---------- engineering themes ---------- */
+  .blueprint { --bg:#12407a; --side:rgba(6,30,66,.55); --card:rgba(255,255,255,.05); --idea:rgba(255,255,255,.09); --line:rgba(205,228,255,.42); --line-strong:rgba(205,228,255,.7);
+               --text:#eaf4ff; --muted:#9dc0ea; --accent:#ffffff; --accent-soft:rgba(255,255,255,.14); --claude:#ffd978; --claude-soft:rgba(255,217,120,.14);
+               --grid:linear-gradient(rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.07) 1px,transparent 1px); --grid-size:20px 20px;
+               --font:'IBM Plex Mono',Consolas,monospace; --head:'Share Tech Mono','IBM Plex Mono',monospace; --caps:uppercase; --track:.08em;
+               --r:0px; --box-r:0px; --frame-r:2px; --shadow:none; --chip-r:0px; --chip-b:1px; --dot-r:0; }
+  .pcb       { --bg:#0b3d2c; --side:#072a1e; --card:#0f4a36; --idea:#123f30; --line:#1f6b4f; --text:#eef3e6; --muted:#8fb9a2;
+               --accent:#e8b84a; --accent-soft:rgba(232,184,74,.15); --claude:#f2f2f2; --claude-soft:rgba(255,255,255,.12);
+               --grid:radial-gradient(rgba(232,184,74,.16) 1.2px,transparent 1.6px); --grid-size:18px 18px;
+               --font:'IBM Plex Mono',Consolas,monospace; --head:'IBM Plex Mono',monospace; --caps:uppercase; --track:.04em;
+               --r:3px; --box-r:50%; --frame-r:8px; --shadow:none; --chip-r:3px; --idea-bar:3px; --idea-bar-c:#e8b84a; }
+  .scope     { --bg:#06100f; --side:#030908; --card:rgba(10,28,26,.85); --idea:rgba(10,28,26,.85); --line:#17413c; --text:#c9fff3; --muted:#4f958a;
+               --accent:#35f0c8; --accent-soft:rgba(53,240,200,.12); --claude:#ffb347; --claude-soft:rgba(255,179,71,.13);
+               --grid:linear-gradient(rgba(53,240,200,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(53,240,200,.08) 1px,transparent 1px); --grid-size:32px 32px;
+               --font:'IBM Plex Mono',Consolas,monospace; --head:'Share Tech Mono','IBM Plex Mono',monospace; --caps:uppercase; --track:.1em;
+               --r:2px; --box-r:2px; --frame-r:10px; --shadow:0 0 0 1px rgba(53,240,200,.04); --chip-r:2px; --nav-bar:2px; }
+  .cad       { --bg:#22262c; --side:#1a1d22; --card:#2a2f37; --idea:#2a2f37; --line:#3a414c; --text:#e3e7ee; --muted:#8792a3;
+               --accent:#3fd0e8; --accent-soft:rgba(63,208,232,.13); --claude:#f5d33e; --claude-soft:rgba(245,211,62,.13);
+               --font:'IBM Plex Sans',Segoe UI,sans-serif; --head:'IBM Plex Sans',sans-serif;
+               --r:3px; --box-r:2px; --frame-r:6px; --shadow:none; --chip-r:2px; --nav-bar:3px; --idea-bar:3px; --idea-bar-c:#e85fd0; --dot-r:1px; }
+  .pad       { --bg:#eef3dc; --side:#e3ebcc; --card:rgba(255,255,244,.75); --idea:rgba(255,255,244,.9); --line:#b3c795; --line-strong:#7f9a63;
+               --text:#22331f; --muted:#667a58; --accent:#1f6b3a; --accent-soft:rgba(31,107,58,.13); --claude:#a2461f; --claude-soft:rgba(162,70,31,.12);
+               --grid:linear-gradient(rgba(70,120,60,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(70,120,60,.16) 1px,transparent 1px); --grid-size:16px 16px;
+               --font:'IBM Plex Mono',Consolas,monospace; --head:'IBM Plex Mono',monospace;
+               --r:2px; --box-r:1px; --frame-r:4px; --shadow:none; --chip-r:2px; --idea-bar:3px; --idea-bar-c:#1f6b3a; }
+  .datasheet { --bg:#ffffff; --side:#f4f5f6; --card:#ffffff; --idea:#f7f7f8; --line:#c9ccd1; --text:#15171a; --muted:#6a707a;
+               --accent:#c8102e; --accent-soft:rgba(200,16,46,.08); --claude:#0b5cad; --claude-soft:rgba(11,92,173,.09);
+               --font:'IBM Plex Sans',Helvetica,Arial,sans-serif; --head:'IBM Plex Sans',Helvetica,sans-serif; --rule:2px;
+               --r:0px; --box-r:0px; --frame-r:0px; --shadow:none; --chip-r:0px; --nav-bar:3px; --idea-bar:3px; --idea-bar-c:#c8102e; --dot-r:0; }
+  .panel     { --bg:#2b2e33; --side:#202327; --card:#363a40; --idea:#363a40; --line:#4a4f57; --text:#eceef0; --muted:#979da6;
+               --accent:#ff9d1e; --accent-soft:rgba(255,157,30,.15); --claude:#6fd3ff; --claude-soft:rgba(111,211,255,.13);
+               --font:Barlow,Segoe UI,sans-serif; --head:'Barlow Condensed',Barlow,sans-serif; --caps:uppercase; --track:.06em;
+               --r:4px; --box-r:3px; --frame-r:10px; --shadow:inset 0 1px 0 rgba(255,255,255,.05); --chip-r:3px; --nav-bar:3px;
+               --idea-bar:6px; --idea-bar-c:#ff9d1e; }
+  .cryo      { --bg:#f3f6f9; --side:#e8edf3; --card:#ffffff; --idea:#eaf2fb; --line:#d1dae5; --text:#17212e; --muted:#6c7c90;
+               --accent:#1769c2; --accent-soft:rgba(23,105,194,.1); --claude:#c2571a; --claude-soft:rgba(194,87,26,.1);
+               --font:'IBM Plex Sans',Segoe UI,sans-serif; --head:'IBM Plex Sans',sans-serif;
+               --r:6px; --box-r:4px; --frame-r:10px; --shadow:0 1px 2px rgba(20,40,70,.06); --chip-r:4px; }
+
+  /* ---------- general themes ---------- */
+  .midnight { --bg:#12121c; --side:#0c0c14; --card:#1b1b2a; --idea:#201a36; --line:#2a2a3d; --text:#eceaf7; --muted:#8a88a3;
+              --accent:#a78bfa; --accent-soft:rgba(167,139,250,.16); --claude:#f0a070; --claude-soft:rgba(240,160,112,.15);
+              --font:Inter,sans-serif; --head:Inter,sans-serif; --r:10px; --box-r:5px; --frame-r:16px; --shadow:none; }
+  .paper    { --bg:#faf6ee; --side:#f3ecdf; --card:#fffdf8; --idea:#f6ead8; --line:#e2d7c3; --text:#2b2620; --muted:#8c8171;
+              --accent:#b4532a; --accent-soft:rgba(180,83,42,.12); --claude:#4a6b54; --claude-soft:rgba(74,107,84,.13);
+              --font:Inter,sans-serif; --head:Fraunces,Georgia,serif; --r:4px; --box-r:3px; --frame-r:8px; --shadow:0 1px 0 rgba(60,40,10,.06); }
+  .terminal { --bg:#0a0d0a; --side:#060806; --card:#0e130e; --idea:#0e130e; --line:#1f3a22; --text:#b9f5c0; --muted:#4f8a58;
+              --accent:#39ff6a; --accent-soft:rgba(57,255,106,.12); --claude:#ffc24a; --claude-soft:rgba(255,194,74,.12);
+              --font:'JetBrains Mono',monospace; --head:'JetBrains Mono',monospace; --r:0px; --box-r:0px; --frame-r:4px; --shadow:none; }
+  .pastel   { --bg:#fdf7fb; --side:#f6ecfa; --card:#ffffff; --idea:#fff3e2; --line:#eedff2; --text:#3a2f47; --muted:#9a8aa8;
+              --accent:#d9609b; --accent-soft:rgba(217,96,155,.13); --claude:#6a7fe0; --claude-soft:rgba(106,127,224,.14);
+              --font:Nunito,sans-serif; --head:Nunito,sans-serif; --r:16px; --box-r:8px; --frame-r:24px; --shadow:0 3px 10px rgba(180,120,190,.12); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Engineering themes</h1>
+  <p>Same screen in eight engineering looks. Every theme on this page ships in the app with a switcher — you're choosing the default.</p>
+  <div class="grid" id="eng"></div>
+
+  <h1 class="second">The first four (still available)</h1>
+  <p>These stay in the switcher too.</p>
+  <div class="grid" id="gen"></div>
+</div>
+
+<template id="mock">
+  <div class="app">
+    <aside class="side">
+      <div class="brand">my<i>notes</i></div>
+      <div class="nav on"><span>Today</span><small>4</small></div>
+      <div class="nav"><span>All tasks</span><small>23</small></div>
+      <div class="nav"><span>Project ideas</span><small>7</small></div>
+      <div class="nav-h">Categories</div>
+      <div class="nav"><span><span class="dot" style="background:#e5734f"></span>Work</span><small>9</small></div>
+      <div class="nav"><span><span class="dot" style="background:#4fa3e5"></span>Personal</span><small>6</small></div>
+      <div class="nav"><span><span class="dot" style="background:#5bbf7a"></span>Learning</span><small>5</small></div>
+      <div class="nav"><span><span class="dot" style="background:#c98be0"></span>Home</span><small>3</small></div>
+    </aside>
+    <section class="main">
+      <h2>Today</h2>
+      <div class="sub">Monday, 16 November · 4 open</div>
+      <div class="add">+ Add a task…</div>
+      <div class="task"><span class="box"></span><span class="t">Review pull request for sync module</span><span class="chip">Work</span></div>
+      <div class="task"><span class="box"></span><span class="t">Add retry logic to upload script</span><span class="chip c">from Claude</span></div>
+      <div class="task"><span class="box"></span><span class="t">Book dentist appointment</span><span class="chip">Personal</span></div>
+      <div class="task done"><span class="box"></span><span class="t">Finish chapter 3 of Rust book</span><span class="chip">Learning</span></div>
+      <div class="idea"><b>Idea · Habit tracker with streak heatmap</b><span>Small PWA, offline first. Maybe share streaks with friends.</span></div>
+    </section>
+  </div>
+</template>
+
+<script>
+  const eng = [
+    ["blueprint", "1 · Blueprint",       "technical-drawing blue, white linework, drafting grid"],
+    ["pcb",       "2 · PCB",             "solder-mask green, gold pads, silkscreen lettering"],
+    ["scope",     "3 · Oscilloscope",    "black screen, teal phosphor trace, graticule grid"],
+    ["cad",       "4 · CAD",             "charcoal workspace, cyan / yellow / magenta layer colours"],
+    ["pad",       "5 · Engineer's Pad",  "green grid calculation paper, ink-green type (light)"],
+    ["datasheet", "6 · Datasheet",       "white page, strict rules, red accent, no rounding (light)"],
+    ["panel",     "7 · Control Panel",   "gunmetal, amber indicators, condensed stencil-style headings"],
+    ["cryo",      "8 · Cleanroom",       "cool white and steel blue, precise and quiet (light)"],
+  ];
+  const gen = [
+    ["midnight", "9 · Midnight",  "dark, violet accent, clean sans-serif"],
+    ["paper",    "10 · Paper",    "warm cream, serif headings, terracotta accent"],
+    ["terminal", "11 · Terminal", "black + green, monospace, sharp corners"],
+    ["pastel",   "12 · Pastel",   "soft light, rounded, playful pink accent"],
+  ];
+  const tpl = document.getElementById("mock");
+  function fill(id, list) {
+    const grid = document.getElementById(id);
+    for (const [cls, name, desc] of list) {
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `<div class="label">${name}<span>${desc}</span></div>`;
+      const app = tpl.content.firstElementChild.cloneNode(true);
+      app.classList.add(cls);
+      wrap.appendChild(app);
+      grid.appendChild(wrap);
+    }
+  }
+  fill("eng", eng);
+  fill("gen", gen);
+</script>
+</body>
+</html>
