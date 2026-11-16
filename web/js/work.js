@@ -7,7 +7,7 @@ import { viewModel, renderTasks } from './tasks.js';
 
 let idleTimer = null;
 let hiddenAt = 0;
-export const autoLockMinutes = () => Number(ls.get('mynotes:autolock', 5)) || 5;
+export const autoLockMinutes = () => Number(ls.get('synaptask:autolock', 5)) || 5;
 
 /** Lock automatically after a period without any interaction, or when the tab was hidden that long. */
 export function armAutoLock() {

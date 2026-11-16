@@ -54,7 +54,7 @@ export async function startEnroll() {
   for (const f of factors?.all || []) {
     if (f.status !== 'verified') await sb.auth.mfa.unenroll({ factorId: f.id }); // clear abandoned attempts
   }
-  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: `MyNotes ${Date.now()}` });
+  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Synaptask ${Date.now()}` });
   if (error) throw error;
   return { factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret };
 }

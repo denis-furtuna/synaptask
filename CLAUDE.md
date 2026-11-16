@@ -1,10 +1,16 @@
-# MyNotes
+# Synaptask
 
 Personal to-do + project-ideas app with a Claude connector. This file is the handoff from the
 session that started the build; it holds every product decision the owner made and the state of
 the code. Read it fully before continuing. Delete the "Current status" section once the build is done.
 
 ## What the owner asked for (all decided, do not re-ask)
+
+- **Name: Synaptask** (synapse + task), chosen on 2026-11-16 after checking the Play Store and the web:
+  no app or product used it then. The owner plans to publish on Google Play later; run a trademark search
+  (EUIPO / WIPO, class 9) before that. Small caution: it sounds a bit like "SnapTask" (an iOS task app).
+  Tagline idea the owner liked: "clean your mind". Storage keys, the backup format and the TOTP label all use
+  `synaptask`. Play Store package ID still to choose (e.g. `app.synaptask`).
 
 - One app for to-dos per category and project ideas, usable on Windows laptop, other computers,
   Android and iPhone. So: an installable PWA, hosted online, with sync.
@@ -90,7 +96,7 @@ Still to write:
 1. `web/js/settings.js`: theme picker (swatches using nested `data-theme`), category manager dialog
    `openCategoryManager(space)` (referenced by `data-act="cats-manage"` with `data-space`), reminders
    (enable push on this device, email toggle, stored in `user_settings`), security (auto-lock minutes in
-   `ls` key `mynotes:autolock`, change work passphrase via `work.openPassphraseChange()`, sign out),
+   `ls` key `synaptask:autolock`, change work passphrase via `work.openPassphraseChange()`, sign out),
    Claude connector instructions (URL `${supabaseUrl}/functions/v1/mcp`), export / import JSON, local-mode notice.
 2. `web/js/auth.js`: sign in, create account (min 12 chars), forgot password, TOTP enrol (QR is an SVG
    data URL from `startEnroll()`), TOTP challenge.
@@ -144,7 +150,7 @@ Still to write:
   `supabase.auth.oauth.getAuthorizationDetails(id)`, `approveAuthorization(id)`, `denyAuthorization(id)`,
   then redirects to the returned `redirect_url`. Plan: Site URL = the GitHub Pages URL, path `/consent.html`.
   The consent page must require an `aal2` session; if signed out, stash its URL in sessionStorage
-  (`mynotes:returnTo`) and send the user to `index.html`, which returns there after sign-in.
+  (`synaptask:returnTo`) and send the user to `index.html`, which returns there after sign-in.
   <https://supabase.com/docs/guides/auth/oauth-server/getting-started>
 - OAuth access tokens include `client_id`, `aal`, `amr`, `sub`, `role: authenticated`.
   **Unverified:** whether a token approved from an `aal2` session carries `aal2`. If it carries `aal1`,

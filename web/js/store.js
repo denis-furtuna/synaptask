@@ -31,7 +31,7 @@ let syncing = false;
 let syncAgain = false;
 export let syncState = online ? 'idle' : 'local'; // local | idle | syncing | offline | error
 
-const key = (name) => `mynotes:${ns}:${name}`;
+const key = (name) => `synaptask:${ns}:${name}`;
 const persist = (table) => {
   if (!ls.set(key(table), db[table])) bus.emit('storage-full');
 };
@@ -290,7 +290,7 @@ export const pendingCount = () => TABLES.reduce((n, t) => n + db[t].filter((r) =
 
 /** Restore personal data from a backup made with exportData(). Existing records with the same id are overwritten. */
 export function importData(json) {
-  if (!json || json.app !== 'mynotes') throw new Error('This is not a MyNotes backup file.');
+  if (!json || json.app !== 'synaptask') throw new Error('This is not a Synaptask backup file.');
   let n = 0;
   for (const table of ['categories', 'ideas', 'tasks']) {
     for (const raw of Array.isArray(json[table]) ? json[table] : []) {
@@ -312,7 +312,7 @@ export function importData(json) {
 export function exportData() {
   const clean = (rows) => rows.filter(alive).map(publicFields);
   return {
-    app: 'mynotes', version: 1, exported_at: nowIso(),
+    app: 'synaptask', version: 1, exported_at: nowIso(),
     categories: clean(db.categories), tasks: clean(db.tasks), ideas: clean(db.ideas),
     encrypted_work_items: clean(db.vault_items),
   };
