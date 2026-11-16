@@ -134,7 +134,12 @@ real project rather than `supabase start`.
 
 ### Open questions, in the order to check them once the project exists
 
-1. **`aal` of OAuth tokens.** Supabase's token-security doc shows `"aal": "aal1"` in its example OAuth token, so
+1. **RESOLVED 2026-11-16 (`0005_trusted_sessions.sql`, applied live).** Claude's session was `aal1` as expected.
+   `oauth_client_trusted()` now also requires the token's `session_id` to be the FIRST `auth.sessions` row of that
+   app created after the approval (`trusted_clients.updated_at`) and within 10 minutes; `require_mfa` on the
+   connector tables is `aal2 OR oauth_client_trusted()`. A reconnect that skips the consent page ("already
+   approved") gets an untrusted session: Disconnect in Settings, then connect again. Confirmed live the same day: Claude listed the
+   owner's tasks on claude.ai and in a new Claude Code session (claude.ai connectors carry over to Claude Code). Original note: Supabase's token-security doc shows `"aal": "aal1"` in its example OAuth token, so
    expect the connector to be blocked by `require_mfa` at first. After connecting Claude, ask it to list tasks; if it
    sees nothing, check `aal` in the token (Edge Function logs, or log `jwtClaims` once). The trusted list already
    stops a password-only attacker who registers their *own* app. Remaining risk if `require_mfa` is relaxed to

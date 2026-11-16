@@ -164,9 +164,7 @@ Try: *"Add 'renew passport' to Synaptask for next Friday, high priority"*, *"Wha
 your approval: a notification arrives, open Synaptask → Work, pick a duration and tap *Allow*, then tell
 Claude to try again).
 
-**First thing to check after connecting:** ask Claude to list your tasks. If it sees nothing although you
-have tasks, the access token Supabase issued to Claude is probably marked `aal1` (password-level). The
-database deliberately refuses that. Do not loosen the policy blindly; see *Open questions* in `CLAUDE.md`.
+**First thing to check after connecting:** ask Claude to list your tasks.
 
 ## What Claude can and cannot do
 
@@ -191,7 +189,9 @@ and with your approval `list_work_categories`, `list_work_tasks`, `update_work_t
   could register an app. The consent page therefore refuses every app that does not return to Claude
   (`claude.ai` / `claude.com`, or `localhost` for Claude Code), asks for a fresh authenticator code before approving,
   and then puts the app on your **trusted list** (`trusted_clients`). The database lets an OAuth token in only if its
-  app is on that list, and only the app itself (with MFA) can edit the list. An app approved any other way, even by
+  app is on that list, and only the app itself (with MFA) can edit the list. Trust covers exactly one session: the
+  first one the app opens right after your approval (within 10 minutes). If Claude ever says it is "not on the
+  trusted list", disconnect it in *Settings → Connected apps* and connect it again. An app approved any other way, even by
   someone who knows your password, gets nothing. *Settings → Connected apps → Disconnect* cuts an app off at once.
 - OAuth tokens carry `client_id`; the vault keys and push devices refuse any token that has one, and work items
   refuse it unless you have an active grant. The connector may insert into the Work inbox but not read it.

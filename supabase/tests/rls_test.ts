@@ -13,6 +13,7 @@ await db.exec(`
   create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
   create schema auth;
   create table auth.users (id uuid primary key, email text);
+  create table auth.sessions (id uuid primary key, user_id uuid, oauth_client_id uuid, aal text, created_at timestamptz default clock_timestamp());
   -- Same definitions Supabase uses.
   create function auth.jwt() returns jsonb language sql stable as $$
     select coalesce(nullif(current_setting('request.jwt.claim', true), ''), nullif(current_setting('request.jwt.claims', true), ''))::jsonb $$;
@@ -53,8 +54,10 @@ async function as(claims: Record<string, string> | null, sql: string, params: un
 const userA = { sub: A, role: 'authenticated', aal: 'aal2' };
 const userAaal1 = { sub: A, role: 'authenticated', aal: 'aal1' };
 const userB = { sub: B, role: 'authenticated', aal: 'aal2' };
-const claudeA = { sub: A, role: 'authenticated', aal: 'aal2', client_id: 'claude-client' };
-const claudeAaal1 = { sub: A, role: 'authenticated', aal: 'aal1', client_id: 'claude-client' };
+// Supabase issues connector tokens at aal1; trust comes from the session bound at approval (0005).
+const S1 = '5e550000-0000-4000-8000-000000000001', S2 = '5e550000-0000-4000-8000-000000000002', S3 = '5e550000-0000-4000-8000-000000000003';
+const newSession = (id: string, user = A) => db.exec(`insert into auth.sessions (id, user_id, oauth_client_id, aal) values ('${id}', '${user}', 'c1a0de00-0000-4000-8000-000000000001', 'aal1')`);
+const claudeA = { sub: A, role: 'authenticated', aal: 'aal1', client_id: 'c1a0de00-0000-4000-8000-000000000001', session_id: S1 };
 
 Deno.test({ name: 'rls: every caller sees exactly what it should', sanitizeResources: false, sanitizeOps: false }, async () => {
   let r;
@@ -137,15 +140,31 @@ Deno.test({ name: 'rls: every caller sees exactly what it should', sanitizeResou
   // --- trusted apps (0003_trusted_clients.sql): only the app itself, with MFA, edits the list
   r = await as(claudeA, `select count(*)::int n from public.tasks`);
   ok(r.rows[0]?.n === 0, 'connector reads nothing before its app is trusted');
-  r = await as(claudeA, `insert into public.trusted_clients (client_id) values ('claude-client')`);
+  r = await as(claudeA, `insert into public.trusted_clients (client_id) values ('c1a0de00-0000-4000-8000-000000000001')`);
   ok(r.error?.code === '42501', `connector cannot trust itself (got ${r.error?.code})`);
-  r = await as(userAaal1, `insert into public.trusted_clients (client_id) values ('claude-client')`);
+  r = await as(userAaal1, `insert into public.trusted_clients (client_id) values ('c1a0de00-0000-4000-8000-000000000001')`);
   ok(r.error?.code === '42501', `password-only session cannot trust an app (got ${r.error?.code})`);
-  r = await as(userB, `insert into public.trusted_clients (user_id, client_id) values ($1, 'claude-client')`, [A]);
+  r = await as(userB, `insert into public.trusted_clients (user_id, client_id) values ($1, 'c1a0de00-0000-4000-8000-000000000001')`, [A]);
   ok(r.error?.code === '42501', `B cannot trust an app for A (got ${r.error?.code})`);
-  r = await as(userA, `insert into public.trusted_clients (client_id, name, redirect_uri) values ('claude-client', 'Claude', 'https://claude.ai/api/mcp/auth_callback')
+  r = await as(userA, `insert into public.trusted_clients (client_id, name, redirect_uri) values ('c1a0de00-0000-4000-8000-000000000001', 'Claude', 'https://claude.ai/api/mcp/auth_callback')
     on conflict (user_id, client_id) do update set name = excluded.name returning user_id`);
   ok(!r.error && r.rows[0]?.user_id === A, `app trusts Claude: ${r.error?.message}`);
+  r = await as(claudeA, `select count(*)::int n from public.tasks`);
+  ok(r.rows[0]?.n === 0, 'trusted app without a session yet reads nothing');
+  await newSession(S1); // Claude exchanges its code: the first session after the approval
+  await newSession(S2); // a later session of the same app (password-only attacker reusing the client id)
+  r = await as({ ...claudeA, session_id: S2 }, `select count(*)::int n from public.tasks`);
+  ok(r.rows[0]?.n === 0, 'a second session of the trusted app reads nothing');
+  r = await as({ ...claudeA, session_id: S2 }, `insert into public.tasks (title) values ('second session')`);
+  ok(r.error?.code === '42501', `a second session of the trusted app cannot write (got ${r.error?.code})`);
+  r = await as({ sub: A, role: 'authenticated', aal: 'aal1', client_id: claudeA.client_id }, `select count(*)::int n from public.tasks`);
+  ok(r.rows[0]?.n === 0, 'a token without session_id reads nothing');
+  r = await as({ ...claudeA, sub: B }, `select count(*)::int n from public.tasks`);
+  ok(r.rows[0]?.n === 0, 'the session is bound to its user');
+  await db.exec(`set session_replication_role = replica; update public.trusted_clients set updated_at = updated_at - interval '11 minutes'; set session_replication_role = origin;`);
+  r = await as(claudeA, `select count(*)::int n from public.tasks`);
+  ok(r.rows[0]?.n === 0, 'a session created more than 10 minutes after the approval reads nothing');
+  await db.exec(`set session_replication_role = replica; update public.trusted_clients set updated_at = updated_at + interval '11 minutes'; set session_replication_role = origin;`);
   r = await as(userA, `insert into public.trusted_clients (client_id) values ('${'x'.repeat(201)}')`);
   ok(r.error?.code === '23514', `over-long client id refused (got ${r.error?.code})`);
   r = await as(claudeA, `select count(*)::int n from public.trusted_clients`);
@@ -215,8 +234,8 @@ Deno.test({ name: 'rls: every caller sees exactly what it should', sanitizeResou
   ok(r.rows[0]?.timezone === 'Europe/Paris', 'connector reads the time zone');
   r = await as(claudeA, `update public.user_settings set email_reminders = false`);
   ok(!r.error && r.affected === 0, 'connector cannot change settings');
-  r = await as(claudeAaal1, `select count(*)::int n from public.tasks`);
-  ok(r.rows[0]?.n === 0, 'connector token at aal1 reads nothing (see README if Supabase issues aal1 tokens)');
+  r = await as(userAaal1, `select public.vault_public_key() k`);
+  ok(r.rows[0]?.k === null, 'password-only session gets no vault public key');
 
   // --- the app reads and empties the inbox
   r = await as(userA, `select count(*)::int n from public.vault_inbox`);
@@ -288,7 +307,7 @@ Deno.test({ name: 'rls: every caller sees exactly what it should', sanitizeResou
   ok(r.rows[0]?.n === 0, 'A\'s grant does nothing for another user');
 
   // Disconnect in Settings: the trusted row goes, the connector is cut off at once (even mid-grant)
-  r = await as(userA, `delete from public.trusted_clients where client_id = 'claude-client'`);
+  r = await as(userA, `delete from public.trusted_clients where client_id = 'c1a0de00-0000-4000-8000-000000000001'`);
   ok(r.affected === 1, 'app disconnects Claude');
   for (const t of ['tasks', 'vault_items', 'work_grants', 'user_settings']) {
     r = await as(claudeA, `select count(*)::int n from public.${t}`);
@@ -296,8 +315,14 @@ Deno.test({ name: 'rls: every caller sees exactly what it should', sanitizeResou
   }
   r = await as(claudeA, `insert into public.tasks (title) values ('after disconnect')`);
   ok(r.error?.code === '42501', `disconnected app cannot add tasks (got ${r.error?.code})`);
-  r = await as(userA, `insert into public.trusted_clients (client_id, name) values ('claude-client', 'Claude')`);
+  r = await as(userA, `insert into public.trusted_clients (client_id, name) values ('c1a0de00-0000-4000-8000-000000000001', 'Claude')`);
   ok(!r.error, `app reconnects Claude: ${r.error?.message}`);
+  r = await as(claudeA, `select count(*)::int n from public.tasks`);
+  ok(r.rows[0]?.n === 0, 'the old session stays cut off after a new approval');
+  await newSession(S3);
+  claudeA.session_id = S3;
+  r = await as(claudeA, `select count(*)::int n from public.tasks`);
+  ok(r.rows[0]?.n >= 1, 'the session created after the new approval works');
 
   // the grant runs out
   await db.exec(`set session_replication_role = replica; update public.work_grants set expires_at = now() - interval '1 second'; set session_replication_role = origin;`);
