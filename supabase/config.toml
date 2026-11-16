@@ -1,0 +1,10 @@
+# Only function settings live here. Auth settings (site URL, OAuth server, MFA) are set in the
+# Supabase dashboard as described in README.md, so do NOT run `supabase config push`.
+
+[functions.mcp]
+# The function checks the token itself (withSupabase) and must answer OAuth discovery unauthenticated.
+verify_jwt = false
+
+[functions.reminders]
+# Called by pg_cron with the secret key in the apikey header (withSupabase auth: 'secret').
+verify_jwt = false

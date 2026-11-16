@@ -1,0 +1,148 @@
+/* The 12 themes. Ported from docs/theme-preview.html.
+   [data-theme] resets every variable first, so a theme nested inside another
+   (the swatches in Settings) never inherits values from the outer one. */
+
+[data-theme] {
+  --line-strong: var(--line);
+  --grid: none; --grid-size: auto;
+  --caps: none; --track: 0;
+  --rule: 1px; --nav-bar: 0px; --idea-bar: 1px; --idea-bar-c: var(--line);
+  --chip-r: 99px; --chip-b: 0px; --dot-r: 50%;
+  --shadow: none;
+  --field: var(--card);
+  --on-accent: #ffffff;
+  --danger: #ff6b6b; --warn: #f5b942; --ok: #5bbf7a;
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------- engineering */
+
+[data-theme="blueprint"] {
+  --bg: #12407a; --side: rgba(6,30,66,.55); --card: rgba(255,255,255,.05); --idea: rgba(255,255,255,.09);
+  --line: rgba(205,228,255,.42); --line-strong: rgba(205,228,255,.7);
+  --text: #eaf4ff; --muted: #9dc0ea; --accent: #ffffff; --accent-soft: rgba(255,255,255,.14);
+  --claude: #ffd978; --claude-soft: rgba(255,217,120,.14);
+  --grid: linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px);
+  --grid-size: 20px 20px;
+  --font: 'IBM Plex Mono', Consolas, monospace; --head: 'Share Tech Mono', 'IBM Plex Mono', monospace;
+  --caps: uppercase; --track: .08em;
+  --r: 0px; --box-r: 0px; --frame-r: 2px; --chip-r: 0px; --chip-b: 1px; --dot-r: 0;
+  --field: rgba(6,30,66,.45); --on-accent: #12407a; --danger: #ff9b8f;
+}
+
+[data-theme="pcb"] {
+  --bg: #0b3d2c; --side: #072a1e; --card: #0f4a36; --idea: #123f30; --line: #1f6b4f;
+  --text: #eef3e6; --muted: #8fb9a2; --accent: #e8b84a; --accent-soft: rgba(232,184,74,.15);
+  --claude: #f2f2f2; --claude-soft: rgba(255,255,255,.12);
+  --grid: radial-gradient(rgba(232,184,74,.16) 1.2px, transparent 1.6px); --grid-size: 18px 18px;
+  --font: 'IBM Plex Mono', Consolas, monospace; --head: 'IBM Plex Mono', monospace;
+  --caps: uppercase; --track: .04em;
+  --r: 3px; --box-r: 50%; --frame-r: 8px; --chip-r: 3px; --idea-bar: 3px; --idea-bar-c: #e8b84a;
+  --field: #0a3426; --on-accent: #0b2a1e;
+}
+
+[data-theme="scope"] {
+  --bg: #06100f; --side: #030908; --card: rgba(10,28,26,.85); --idea: rgba(10,28,26,.85); --line: #17413c;
+  --text: #c9fff3; --muted: #4f958a; --accent: #35f0c8; --accent-soft: rgba(53,240,200,.12);
+  --claude: #ffb347; --claude-soft: rgba(255,179,71,.13);
+  --grid: linear-gradient(rgba(53,240,200,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(53,240,200,.08) 1px, transparent 1px);
+  --grid-size: 32px 32px;
+  --font: 'IBM Plex Mono', Consolas, monospace; --head: 'Share Tech Mono', 'IBM Plex Mono', monospace;
+  --caps: uppercase; --track: .1em;
+  --r: 2px; --box-r: 2px; --frame-r: 10px; --shadow: 0 0 0 1px rgba(53,240,200,.04); --chip-r: 2px; --nav-bar: 2px;
+  --field: #040c0b; --on-accent: #03120f;
+}
+
+[data-theme="cad"] {
+  --bg: #22262c; --side: #1a1d22; --card: #2a2f37; --idea: #2a2f37; --line: #3a414c;
+  --text: #e3e7ee; --muted: #8792a3; --accent: #3fd0e8; --accent-soft: rgba(63,208,232,.13);
+  --claude: #f5d33e; --claude-soft: rgba(245,211,62,.13);
+  --font: 'IBM Plex Sans', 'Segoe UI', sans-serif; --head: 'IBM Plex Sans', sans-serif;
+  --r: 3px; --box-r: 2px; --frame-r: 6px; --chip-r: 2px; --nav-bar: 3px; --idea-bar: 3px; --idea-bar-c: #e85fd0; --dot-r: 1px;
+  --field: #1e2227; --on-accent: #0f2a30;
+}
+
+[data-theme="pad"] {
+  --bg: #eef3dc; --side: #e3ebcc; --card: rgba(255,255,244,.75); --idea: rgba(255,255,244,.9);
+  --line: #b3c795; --line-strong: #7f9a63;
+  --text: #22331f; --muted: #667a58; --accent: #1f6b3a; --accent-soft: rgba(31,107,58,.13);
+  --claude: #a2461f; --claude-soft: rgba(162,70,31,.12);
+  --grid: linear-gradient(rgba(70,120,60,.16) 1px, transparent 1px), linear-gradient(90deg, rgba(70,120,60,.16) 1px, transparent 1px);
+  --grid-size: 16px 16px;
+  --font: 'IBM Plex Mono', Consolas, monospace; --head: 'IBM Plex Mono', monospace;
+  --r: 2px; --box-r: 1px; --frame-r: 4px; --chip-r: 2px; --idea-bar: 3px; --idea-bar-c: #1f6b3a;
+  --field: #fbfdf0; --danger: #b3261e; --warn: #9a6a00; --ok: #1f6b3a;
+  color-scheme: light;
+}
+
+[data-theme="datasheet"] {
+  --bg: #ffffff; --side: #f4f5f6; --card: #ffffff; --idea: #f7f7f8; --line: #c9ccd1;
+  --text: #15171a; --muted: #6a707a; --accent: #c8102e; --accent-soft: rgba(200,16,46,.08);
+  --claude: #0b5cad; --claude-soft: rgba(11,92,173,.09);
+  --font: 'IBM Plex Sans', Helvetica, Arial, sans-serif; --head: 'IBM Plex Sans', Helvetica, sans-serif;
+  --rule: 2px;
+  --r: 0px; --box-r: 0px; --frame-r: 0px; --chip-r: 0px; --nav-bar: 3px; --idea-bar: 3px; --idea-bar-c: #c8102e; --dot-r: 0;
+  --danger: #c8102e; --warn: #9a6a00; --ok: #1d7a3e;
+  color-scheme: light;
+}
+
+[data-theme="panel"] {
+  --bg: #2b2e33; --side: #202327; --card: #363a40; --idea: #363a40; --line: #4a4f57;
+  --text: #eceef0; --muted: #979da6; --accent: #ff9d1e; --accent-soft: rgba(255,157,30,.15);
+  --claude: #6fd3ff; --claude-soft: rgba(111,211,255,.13);
+  --font: Barlow, 'Segoe UI', sans-serif; --head: 'Barlow Condensed', Barlow, sans-serif;
+  --caps: uppercase; --track: .06em;
+  --r: 4px; --box-r: 3px; --frame-r: 10px; --shadow: inset 0 1px 0 rgba(255,255,255,.05); --chip-r: 3px; --nav-bar: 3px;
+  --idea-bar: 6px; --idea-bar-c: #ff9d1e;
+  --field: #2f3237; --on-accent: #1b1d20;
+}
+
+[data-theme="cryo"] {
+  --bg: #f3f6f9; --side: #e8edf3; --card: #ffffff; --idea: #eaf2fb; --line: #d1dae5;
+  --text: #17212e; --muted: #6c7c90; --accent: #1769c2; --accent-soft: rgba(23,105,194,.1);
+  --claude: #c2571a; --claude-soft: rgba(194,87,26,.1);
+  --font: 'IBM Plex Sans', 'Segoe UI', sans-serif; --head: 'IBM Plex Sans', sans-serif;
+  --r: 6px; --box-r: 4px; --frame-r: 10px; --shadow: 0 1px 2px rgba(20,40,70,.06); --chip-r: 4px;
+  --danger: #c62828; --warn: #9a6a00; --ok: #1d7a3e;
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------- general */
+
+[data-theme="midnight"] {
+  --bg: #12121c; --side: #0c0c14; --card: #1b1b2a; --idea: #201a36; --line: #2a2a3d;
+  --text: #eceaf7; --muted: #8a88a3; --accent: #a78bfa; --accent-soft: rgba(167,139,250,.16);
+  --claude: #f0a070; --claude-soft: rgba(240,160,112,.15);
+  --font: Inter, sans-serif; --head: Inter, sans-serif;
+  --r: 10px; --box-r: 5px; --frame-r: 16px;
+  --field: #15151f; --on-accent: #14102a;
+}
+
+[data-theme="paper"] {
+  --bg: #faf6ee; --side: #f3ecdf; --card: #fffdf8; --idea: #f6ead8; --line: #e2d7c3;
+  --text: #2b2620; --muted: #8c8171; --accent: #b4532a; --accent-soft: rgba(180,83,42,.12);
+  --claude: #4a6b54; --claude-soft: rgba(74,107,84,.13);
+  --font: Inter, sans-serif; --head: Fraunces, Georgia, serif;
+  --r: 4px; --box-r: 3px; --frame-r: 8px; --shadow: 0 1px 0 rgba(60,40,10,.06);
+  --danger: #b3261e; --warn: #8a5a00; --ok: #3d7a4f;
+  color-scheme: light;
+}
+
+[data-theme="terminal"] {
+  --bg: #0a0d0a; --side: #060806; --card: #0e130e; --idea: #0e130e; --line: #1f3a22;
+  --text: #b9f5c0; --muted: #4f8a58; --accent: #39ff6a; --accent-soft: rgba(57,255,106,.12);
+  --claude: #ffc24a; --claude-soft: rgba(255,194,74,.12);
+  --font: 'JetBrains Mono', monospace; --head: 'JetBrains Mono', monospace;
+  --r: 0px; --box-r: 0px; --frame-r: 4px; --chip-r: 0px; --dot-r: 0;
+  --field: #070a07; --on-accent: #031207; --danger: #ff6b5b;
+}
+
+[data-theme="pastel"] {
+  --bg: #fdf7fb; --side: #f6ecfa; --card: #ffffff; --idea: #fff3e2; --line: #eedff2;
+  --text: #3a2f47; --muted: #9a8aa8; --accent: #d9609b; --accent-soft: rgba(217,96,155,.13);
+  --claude: #6a7fe0; --claude-soft: rgba(106,127,224,.14);
+  --font: Nunito, sans-serif; --head: Nunito, sans-serif;
+  --r: 16px; --box-r: 8px; --frame-r: 24px; --shadow: 0 3px 10px rgba(180,120,190,.12);
+  --danger: #c2185b; --warn: #9a6a00; --ok: #2e7d4f;
+  color-scheme: light;
+}

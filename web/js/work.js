@@ -2,8 +2,77 @@
 import * as store from './store.js';
 import * as vault from './vault.js';
 import { state, openDialog, rerender } from './app.js';
-import { esc, toast, ls, ICON, safeColor } from './util.js';
+import { esc, toast, ls, ICON, safeColor, ymd, today } from './util.js';
 import { viewModel, renderTasks } from './tasks.js';
+
+// ---------------------------------------------------------------- Claude access (time-limited grants)
+
+const DURATIONS = [['60', '1 hour'], ['120', '2 hours'], ['240', '4 hours'], ['480', '8 hours'], ['eod', 'Until midnight']];
+const access = { until: null, requestedAt: null, at: 0, loading: false };
+
+/** Re-read whether Claude has access or is asking for it (at most every 15 s unless forced). */
+export async function refreshAccess(force = false) {
+  if (!store.claudeAccessAvailable() || access.loading) return;
+  if (!force && Date.now() - access.at < 15000) return;
+  access.loading = true;
+  try {
+    Object.assign(access, await store.loadClaudeAccess());
+  } catch (e) {
+    console.warn('claude access', e);
+  } finally {
+    access.at = Date.now();
+    access.loading = false;
+    rerender();
+  }
+}
+const claudeActive = () => !!access.until && Date.parse(access.until) > Date.now();
+/** Claude asked within the last 30 minutes and has no access yet. */
+export const claudeAsking = () => !claudeActive() && !!access.requestedAt && Date.now() - Date.parse(access.requestedAt) < 30 * 60000;
+
+function fmtUntil(iso) {
+  const d = new Date(iso);
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return ymd(d) === today() ? t : `${d.toLocaleDateString([], { weekday: 'short' })} ${t}`;
+}
+
+function expiryFor(choice) {
+  if (choice === 'eod') {
+    const d = new Date();
+    d.setHours(23, 59, 0, 0);
+    if (d.getTime() - Date.now() >= 5 * 60000) return d.toISOString();
+    choice = '60';
+  }
+  return new Date(Date.now() + Number(choice || 120) * 60000).toISOString();
+}
+
+function claudeBar() {
+  if (!store.claudeAccessAvailable()) return '';
+  if (claudeActive()) {
+    return `<div class="claude-bar on" role="status"><span class="grow">Claude can read and change your work tasks until <b>${esc(fmtUntil(access.until))}</b>.</span>
+      <button type="button" class="btn small" data-act="claude-revoke">Stop now</button></div>`;
+  }
+  const asking = claudeAsking();
+  const pick = ls.get('synaptask:claude-for', '120');
+  return `<div class="claude-bar ${asking ? 'ask' : ''}">
+    <span class="grow">${asking ? '<b>Claude is asking to use your Work section.</b>' : 'Claude can add work tasks but not read them.'}</span>
+    <select id="claude-for" aria-label="For how long">${DURATIONS.map(([v, l]) => `<option value="${v}" ${v === pick ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    ${asking ? '<button type="button" class="btn small ghost" data-act="claude-deny">Deny</button>' : ''}
+    <button type="button" class="btn small ${asking ? 'primary' : ''}" data-act="claude-allow">${asking ? 'Allow' : 'Let Claude in'}</button>
+  </div>`;
+}
+
+function lockedNotice() {
+  if (!store.claudeAccessAvailable()) return '';
+  if (claudeActive()) {
+    return `<div class="claude-bar on"><span class="grow">Claude has access to Work until <b>${esc(fmtUntil(access.until))}</b>.</span>
+      <button type="button" class="btn small" data-act="claude-revoke">Stop now</button></div>`;
+  }
+  return claudeAsking() ? '<div class="claude-bar ask"><span class="grow"><b>Claude is asking to use your Work section.</b> Unlock to allow or deny.</span></div>' : '';
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'claude-for') ls.set('synaptask:claude-for', e.target.value);
+});
 
 let idleTimer = null;
 let hiddenAt = 0;
@@ -42,7 +111,7 @@ export function renderWork(route) {
       <div class="gate-icon">${ICON.lock}</div>
       <h2>Set up your Work section</h2>
       <p>Work tasks are encrypted on this device with a passphrase only you know. Nobody else can read them:
-         not the hosting provider, not Claude, not someone who gets into your account.</p>
+         not the hosting provider, not someone who gets into your account, and not Claude unless you let it in for a while.</p>
       <form data-form="vault-create" class="gate-form" autocomplete="off">
         <label class="field"><span>Work passphrase</span><input type="password" name="p1" autocomplete="new-password" minlength="12"></label>
         <label class="field"><span>Repeat passphrase</span><input type="password" name="p2" autocomplete="new-password"></label>
@@ -52,8 +121,10 @@ export function renderWork(route) {
     </div>`;
   }
 
+  refreshAccess();
+
   if (!store.workUnlocked()) {
-    return `<div class="gate">
+    return `${lockedNotice()}<div class="gate">
       <div class="gate-icon">${ICON.lock}</div>
       <h2>Work section is locked</h2>
       <form data-form="vault-unlock" class="gate-form" autocomplete="off">
@@ -71,7 +142,7 @@ export function renderWork(route) {
       ${cats.map((c) => `<a class="pill ${route.id === c.id ? 'on' : ''}" href="#/work/cat/${esc(c.id)}"><i class="dot" style="background:${safeColor(c.color)}"></i>${esc(c.name)}</a>`).join('')}
       <button type="button" class="pill dashed" data-act="cats-manage" data-space="work">Edit categories</button>
     </nav>`;
-  return chips + renderTasks(vm, 'No work tasks yet. Add one above, or ask Claude to send one here.');
+  return claudeBar() + chips + renderTasks(vm, 'No work tasks yet. Add one above, or ask Claude to send one here.');
 }
 
 export const forms = {
@@ -80,10 +151,16 @@ export const forms = {
     const problem = vault.passphraseProblem(p1);
     if (problem) return toast(problem, 'warn');
     if (p1 !== p2) return toast('The two passphrases do not match', 'warn');
+    const existing = await store.loadVaultRecord(); // set up on another device meanwhile?
+    if (existing) {
+      state.vaultRecord = existing;
+      rerender();
+      return toast('Your Work section was already set up on another device. Unlock it with that passphrase.', 'warn');
+    }
     toast('Creating encryption keys…');
     const { record, recoveryKey } = await vault.create(p1);
     try {
-      await store.saveVaultRecord(record);
+      await store.saveVaultRecord(record, { create: true });
     } catch (e) {
       vault.lock();
       return toast(`Could not save the vault: ${e.message}`, 'error');
@@ -106,6 +183,25 @@ export const forms = {
 };
 
 export const actions = {
+  'claude-allow': async () => {
+    const choice = document.getElementById('claude-for')?.value || '120';
+    await store.grantClaude(expiryFor(choice));
+    access.requestedAt = null;
+    await refreshAccess(true);
+    toast(`Claude can use Work until ${fmtUntil(access.until || expiryFor(choice))}`);
+  },
+  'claude-revoke': async () => {
+    await store.revokeClaude();
+    access.until = null;
+    await refreshAccess(true);
+    toast('Claude no longer has access to Work');
+  },
+  'claude-deny': async () => {
+    await store.denyClaude();
+    access.requestedAt = null;
+    await refreshAccess(true);
+    toast('Request denied');
+  },
   'vault-lock': () => { lockNow(); toast('Work section locked'); },
   'vault-recover': () => openPassphraseChange(true),
 };

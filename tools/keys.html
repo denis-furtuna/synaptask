@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Synaptask server keys</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f4f5f7; --fg: #1c1d21; --muted: #5d6270; --card: #fff; --line: #d5d8de; --accent: #c45f00; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1d1f23; --fg: #eceef0; --muted: #9aa0a9; --card: #2a2d32; --line: #42464e; --accent: #ff9d1e; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; padding: 24px 16px; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p, li { color: var(--muted); }
+  b { color: var(--fg); }
+  button { font: inherit; padding: 9px 16px; border-radius: 6px; border: 0; background: var(--accent); color: #111; font-weight: 600; cursor: pointer; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 16px 0; }
+  h2 { font-size: 15px; margin: 0 0 6px; }
+  textarea { width: 100%; box-sizing: border-box; font: 12px/1.4 Consolas, monospace; padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); resize: vertical; }
+  code { font-family: Consolas, monospace; font-size: 13px; }
+  .warn { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Server keys for Synaptask</h1>
+  <p>Generates two key pairs in this browser with WebCrypto. Nothing is sent anywhere: this page has no network access.</p>
+  <ul>
+    <li><b>Push (VAPID)</b>, ECDSA P-256: lets the reminders reach your devices.</li>
+    <li><b>Work access</b>, RSA-OAEP 3072: when you let Claude into the Work section, the app seals the Work key to this
+      public key; only the server's private half can open it, and only until the time you chose.</li>
+  </ul>
+  <button id="go" type="button">Generate both key pairs</button>
+
+  <div id="out" hidden>
+    <section>
+      <h2>1 · Public keys → <code>web/js/config.js</code></h2>
+      <p>Replace the two lines in <code>CONFIG</code> with these. Public keys are safe to commit.</p>
+      <textarea id="pub" rows="6" readonly></textarea>
+    </section>
+    <section class="warn">
+      <h2>2 · Private keys → Supabase secrets (never commit these)</h2>
+      <p>Add these lines to <code>supabase/.env</code> (git ignores it) together with the other secrets in the README,
+        run <code>supabase secrets set --env-file supabase/.env</code>, then delete the file.
+        An env file avoids shell quoting problems with the JSON.</p>
+      <textarea id="priv" rows="9" readonly></textarea>
+    </section>
+    <p>Close this tab when done. New push keys mean every device has to turn push on again; new Work-access keys only
+      affect grants made after the change.</p>
+  </div>
+</main>
+<script>
+  const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  document.getElementById('go').onclick = async () => {
+    const vapid = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    const vapidPub = b64url(await crypto.subtle.exportKey('raw', vapid.publicKey)); // 65-byte uncompressed point
+    const vj = await crypto.subtle.exportKey('jwk', vapid.privateKey);
+    const vapidPriv = JSON.stringify({ kty: vj.kty, crv: vj.crv, x: vj.x, y: vj.y, d: vj.d });
+
+    const grant = await crypto.subtle.generateKey(
+      { name: 'RSA-OAEP', modulusLength: 3072, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['encrypt', 'decrypt']);
+    const gp = await crypto.subtle.exportKey('jwk', grant.publicKey);
+    const gs = await crypto.subtle.exportKey('jwk', grant.privateKey);
+    const grantPub = JSON.stringify({ kty: gp.kty, n: gp.n, e: gp.e });
+    const grantPriv = JSON.stringify({ kty: gs.kty, n: gs.n, e: gs.e, d: gs.d, p: gs.p, q: gs.q, dp: gs.dp, dq: gs.dq, qi: gs.qi });
+
+    document.getElementById('pub').value = `  vapidPublicKey: '${vapidPub}',\n  grantPublicKey: ${grantPub},`;
+    document.getElementById('priv').value = `VAPID_PRIVATE_JWK='${vapidPriv}'\nGRANT_PRIVATE_JWK='${grantPriv}'`;
+    document.getElementById('out').hidden = false;
+  };
+</script>
+</body>
+</html>

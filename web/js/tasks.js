@@ -114,9 +114,9 @@ function taskRow(t, showCat) {
   if (t.source === 'claude') chips.push('<span class="chip claude">from Claude</span>');
 
   const subList = subs.length && state.expanded.has(t.id)
-    ? `<ul class="subs">${subs.map((s) => `<li><label class="${s.done ? 'sub-done' : ''}">
+    ? `<li class="subs-wrap"><ul class="subs">${subs.map((s) => `<li><label class="${s.done ? 'sub-done' : ''}">
         <input type="checkbox" data-act="sub-toggle" data-id="${id}" data-sub="${esc(s.id)}" ${s.done ? 'checked' : ''}>
-        <span>${esc(s.title)}</span></label></li>`).join('')}</ul>`
+        <span>${esc(s.title)}</span></label></li>`).join('')}</ul></li>`
     : '';
 
   return `<li class="task ${isDone ? 'done' : ''} pri-${Number(t.priority) || 0}">

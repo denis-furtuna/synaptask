@@ -43,7 +43,8 @@ async function open(key, box, aad) {
   return new Uint8Array(await crypto.subtle.decrypt(params, key, b64.dec(box.ct)));
 }
 
-const importVaultKey = (raw) => crypto.subtle.importKey('raw', raw, AES, false, ['encrypt', 'decrypt']);
+// Extractable only so the unlocked app can hand Claude a time-limited grant (exportVaultKey).
+const importVaultKey = (raw) => crypto.subtle.importKey('raw', raw, AES, true, ['encrypt', 'decrypt']);
 const newSalt = () => b64.enc(crypto.getRandomValues(new Uint8Array(16)));
 const normRecovery = (s) => String(s).toLowerCase().replace(/[^0-9a-f]/g, '');
 
@@ -94,7 +95,12 @@ export async function unlock(record, passphrase) {
   }
 }
 
-/** Set a new passphrase using either the old passphrase or the recovery key. Returns the updated record, or null. */
+/**
+ * Set a new passphrase using either the old passphrase or the recovery key. Returns the updated record, or null.
+ * @param {object} record
+ * @param {{ passphrase?: string, recoveryKey?: string }} secret
+ * @param {string} newPassphrase
+ */
 export async function rewrap(record, { passphrase, recoveryKey }, newPassphrase) {
   try {
     const raw = recoveryKey
@@ -135,14 +141,25 @@ export async function openSealed(sealed) {
   return JSON.parse(td.decode(await open(key, { iv: sealed.iv, ct: sealed.ct }, 'inbox')));
 }
 
-/** Seal an object to a vault public key (used by tests; the connector does the same in Deno). */
-export async function sealTo(publicJwk, obj) {
-  const pub = await crypto.subtle.importKey('jwk', publicJwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
+/**
+ * Seal an object to an RSA-OAEP public key: `{ wk, iv, ct }`, the format supabase/functions/_shared/seal.ts
+ * produces too. AAD 'inbox' = a work task for the vault; 'work-grant' = the vault key for the server.
+ */
+export async function sealTo(publicJwk, obj, aad = 'inbox') {
+  const { kty, n, e } = publicJwk;
+  const pub = await crypto.subtle.importKey('jwk', { kty, n, e, alg: 'RSA-OAEP-256', ext: true }, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
   const raw = crypto.getRandomValues(new Uint8Array(32));
   const key = await crypto.subtle.importKey('raw', raw, AES, false, ['encrypt']);
-  const box = await seal(key, te.encode(JSON.stringify(obj)), 'inbox');
+  const box = await seal(key, te.encode(JSON.stringify(obj)), aad);
   const wk = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, pub, raw);
+  raw.fill(0);
   return { wk: b64.enc(wk), iv: box.iv, ct: box.ct };
+}
+
+/** The raw vault key, so the unlocked app can grant Claude time-limited access. Zero it after use. */
+export async function exportVaultKey() {
+  if (!vaultKey) throw new Error('Work section is locked');
+  return new Uint8Array(await crypto.subtle.exportKey('raw', vaultKey));
 }
 
 /** Rough passphrase strength check: length matters most. */

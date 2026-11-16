@@ -2,6 +2,13 @@
 // local mode and `sb` is null.
 import { CONFIG } from './config.js';
 
+// Read what an email link put in the URL before supabase-js consumes it (implicit flow).
+const linkParams = new URLSearchParams(location.hash.replace(/^#/, '') + '&' + location.search.replace(/^\?/, ''));
+/** True when the page was opened from a "reset your password" email. */
+export const recoveryLink = linkParams.get('type') === 'recovery';
+/** Error from an expired or invalid email link, if any. */
+export const linkError = linkParams.get('error_description') || '';
+
 const lib = globalThis.supabase;
 export const sb = CONFIG.supabaseUrl && CONFIG.supabaseKey && lib
   ? lib.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, {
@@ -57,6 +64,13 @@ export async function startEnroll() {
   const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Synaptask ${Date.now()}` });
   if (error) throw error;
   return { factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret };
+}
+
+/** Id of the verified authenticator-app factor, or null. */
+export async function totpFactorId() {
+  const { data, error } = await sb.auth.mfa.listFactors();
+  if (error) throw error;
+  return (data?.all || []).find((f) => f.factor_type === 'totp' && f.status === 'verified')?.id ?? null;
 }
 
 export async function verifyCode(factorId, code) {

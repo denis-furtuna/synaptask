@@ -40,8 +40,12 @@ export function openDialog(html, { onSubmit, onAction, onInput } = {}) {
     const keep = onSubmit ? await onSubmit(new FormData(form), form) : true;
     if (keep !== false) closeDialog();
   };
+  // Only a press that starts and ends on the backdrop closes the dialog, so
+  // selecting text in a field and releasing outside does not lose the edit.
+  let downOnBackdrop = false;
+  dlg.onpointerdown = (e) => { downOnBackdrop = e.target === dlg; };
   dlg.onclick = (e) => {
-    if (e.target === dlg) return closeDialog(); // click on the backdrop
+    if (e.target === dlg) { if (downOnBackdrop) closeDialog(); return; } // click on the backdrop
     const el = e.target.closest('[data-dact]');
     if (!el) return;
     if (el.dataset.dact === 'close') return closeDialog();

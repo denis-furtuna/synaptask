@@ -22,8 +22,11 @@ function card(idea) {
   </article>`;
 }
 
-export function renderIdeas() {
-  const ideas = store.list('ideas');
+const ideaMatches = (i, q) => `${i.title}\n${i.notes || ''}\n${(i.tags || []).join(' ')}`.toLowerCase().includes(q);
+
+export function renderIdeas(query = '') {
+  const q = query.trim().toLowerCase();
+  const ideas = store.list('ideas').filter((i) => !q || ideaMatches(i, q));
   const cols = STAGES.map(([key, label]) => {
     const items = ideas.filter((i) => i.stage === key).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     return `<section class="col" data-stage="${key}">

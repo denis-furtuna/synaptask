@@ -3,9 +3,10 @@
 //    synced with Supabase: local changes are pushed, remote changes pulled.
 //  - Work data only ever exists decrypted in memory (`work`). What is stored
 //    and synced is the ciphertext in `vault_items`.
+import { CONFIG } from './config.js';
 import { sb, online } from './backend.js';
 import * as vault from './vault.js';
-import { bus, ls, nowIso, uid, remindAt } from './util.js';
+import { bus, ls, nowIso, uid, remindAt, safeColor, b64 } from './util.js';
 
 // Columns sent to the server, per table. `updated_at` and `reminded_at` are owned by the server.
 const COLUMNS = {
@@ -22,6 +23,58 @@ const DEFAULTS = {
     remind_at: null, recurrence: null, subtasks: [], completed_at: null, last_completed_at: null, source: 'app', position: 0 },
   ideas: { title: '', notes: '', stage: 'idea', tags: [], links: [], position: 0 },
 };
+
+// Same limits as the check constraints in supabase/migrations/0001_init.sql.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const STAGES = ['idea', 'planning', 'building', 'done'];
+const FREQS = ['daily', 'weekly', 'monthly', 'yearly'];
+const str = (v, max) => String(v ?? '').slice(0, max);
+const int = (v, lo, hi, dflt) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : dflt; };
+const arr = (v) => (Array.isArray(v) ? v : []);
+const iso = (v) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+const ymdOk = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') && !Number.isNaN(Date.parse(v)) ? v : null);
+const hmOk = (v) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(v || '') ? v : null);
+const idOk = (v) => (typeof v === 'string' && UUID.test(v) ? v : null);
+const httpOk = (u) => { try { const x = new URL(u); return x.protocol === 'https:' || x.protocol === 'http:'; } catch { return false; } };
+
+function cleanRule(r) {
+  if (!r || typeof r !== 'object' || !FREQS.includes(r.freq)) return null;
+  const out = { freq: r.freq, interval: int(r.interval, 1, 365, 1) };
+  const days = [...new Set(arr(r.days).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort();
+  if (r.freq === 'weekly' && days.length) out.days = days;
+  if ((r.freq === 'monthly' || r.freq === 'yearly') && r.day) out.day = int(r.day, 1, 31, 1);
+  if (r.freq === 'yearly' && r.month) out.month = int(r.month, 1, 12, 1);
+  return out;
+}
+
+/** Coerce a record into the shape and limits the database accepts. */
+function sanitize(table, r) {
+  const base = { ...r, created_at: iso(r.created_at) || nowIso(), deleted_at: iso(r.deleted_at) };
+  if (table === 'categories') {
+    return { ...base, name: str(r.name, 100), color: safeColor(r.color), position: int(r.position, -1e6, 1e6, 0) };
+  }
+  if (table === 'ideas') {
+    return {
+      ...base, title: str(r.title, 300), notes: str(r.notes, 50000), stage: STAGES.includes(r.stage) ? r.stage : 'idea',
+      tags: [...new Set(arr(r.tags).map((t) => str(t, 50).trim()).filter(Boolean))].slice(0, 20),
+      links: arr(r.links).map((l) => str(l, 2000)).filter(httpOk).slice(0, 30),
+      position: int(r.position, -1e6, 1e6, 0),
+    };
+  }
+  if (table === 'tasks') {
+    return {
+      ...base, category_id: idOk(r.category_id), idea_id: idOk(r.idea_id),
+      title: str(r.title, 500), notes: str(r.notes, 20000), priority: int(r.priority, 0, 3, 0),
+      due_date: ymdOk(r.due_date), due_time: r.due_date ? hmOk(r.due_time) : null,
+      recurrence: cleanRule(r.recurrence),
+      subtasks: arr(r.subtasks).filter((s) => s && typeof s === 'object').slice(0, 100)
+        .map((s) => ({ id: str(s.id, 64) || uid(), title: str(s.title, 300), done: !!s.done })),
+      completed_at: iso(r.completed_at), last_completed_at: iso(r.last_completed_at),
+      source: r.source === 'claude' ? 'claude' : 'app', position: int(r.position, -1e6, 1e6, 0),
+    };
+  }
+  return base;
+}
 
 const db = { categories: [], tasks: [], ideas: [], vault_items: [] };
 const work = { categories: [], tasks: [] };
@@ -57,9 +110,11 @@ function seed() {
 
 /** Wipe everything cached on this device for the current user (used on sign-out). */
 export function clearLocal() {
-  for (const t of TABLES) { ls.del(key(t)); ls.del(key(`cursor:${t}`)); db[t] = []; }
-  ls.del(key('vault'));
-  ls.del(key('seeded'));
+  const prefix = key('');
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith(prefix)) localStorage.removeItem(k);
+  } catch { /* storage blocked */ }
+  for (const t of TABLES) db[t] = [];
   lockWork();
 }
 
@@ -91,7 +146,7 @@ const publicFields = (obj) => Object.fromEntries(Object.entries(obj).filter(([k]
 export async function save(table, obj, space) {
   const sp = space || spaceOf(obj);
   const isNew = !obj.id;
-  const rec = { ...DEFAULTS[table], ...publicFields(obj) };
+  const rec = sanitize(table, { ...DEFAULTS[table], ...publicFields(obj) });
   if (isNew) { rec.id = uid(); rec.created_at = nowIso(); }
   rec.deleted_at = null;
   if (table === 'tasks') rec.remind_at = rec.completed_at ? null : remindAt(rec.due_date, rec.due_time);
@@ -157,12 +212,24 @@ export async function loadVaultRecord() {
   return ls.get(key('vault'));
 }
 
-export async function saveVaultRecord(record) {
-  ls.set(key('vault'), record);
+/**
+ * Store the vault record. With `create`, refuse to replace an existing vault:
+ * two devices setting up Work at the same time must not overwrite each other's keys.
+ */
+export async function saveVaultRecord(record, { create = false } = {}) {
   if (online) {
-    const { error } = await sb.from('vaults').upsert({ record, public_key: record.public_key }, { onConflict: 'user_id' });
-    if (error) throw new Error(error.message);
+    const row = { user_id: ns, record, public_key: record.public_key };
+    const { error } = create
+      ? await sb.from('vaults').insert(row)
+      : await sb.from('vaults').upsert(row, { onConflict: 'user_id' });
+    if (error) {
+      if (error.code === '23505') throw new Error('A Work section already exists on your account. Reload and unlock it.');
+      throw new Error(error.message);
+    }
+  } else if (create && ls.get(key('vault'))) {
+    throw new Error('A Work section already exists in this browser.');
   }
+  ls.set(key('vault'), record);
 }
 
 /** Decrypt everything in the vault into memory. Call after a successful unlock. */
@@ -196,11 +263,14 @@ async function importInbox() {
   for (const row of data) {
     try {
       const t = await vault.openSealed(row.sealed);
+      const catName = String(t.category || '').trim().toLowerCase();
+      const cat = catName ? work.categories.find((c) => c.name.trim().toLowerCase() === catName) : null;
+      // save() sanitises every field (dates, priority, recurrence, step list) to the usual limits.
       await save('tasks', {
-        title: String(t.title || '').slice(0, 500), notes: String(t.notes || '').slice(0, 20000),
-        priority: [0, 1, 2, 3].includes(t.priority) ? t.priority : 0,
-        due_date: /^\d{4}-\d{2}-\d{2}$/.test(t.due_date || '') ? t.due_date : null,
-        due_time: /^\d{2}:\d{2}$/.test(t.due_time || '') ? t.due_time : null,
+        title: t.title, notes: t.notes, priority: t.priority, due_date: t.due_date, due_time: t.due_time,
+        recurrence: t.recurrence || null,
+        subtasks: arr(t.steps).map((s) => ({ id: uid(), title: s, done: false })),
+        category_id: cat ? cat.id : null,
         source: 'claude',
       }, 'work');
       await sb.from('vault_inbox').delete().eq('id', row.id);
@@ -215,6 +285,46 @@ export function lockWork() {
   work.categories = [];
   work.tasks = [];
   changed();
+}
+
+// ---------------------------------------------------------------- Claude access to Work
+// See supabase/migrations/0002_work_access.sql. The app seals the vault key to the server's
+// grant key; the database caps a grant at 24 hours and lets only the app create or delete it.
+
+export const claudeAccessAvailable = () => online && !!CONFIG.grantPublicKey;
+
+export async function loadClaudeAccess() {
+  const [g, r] = await Promise.all([
+    sb.from('work_grants').select('expires_at').maybeSingle(),
+    sb.from('work_access_requests').select('requested_at').maybeSingle(),
+  ]);
+  if (g.error) throw new Error(g.error.message);
+  return { until: g.data?.expires_at || null, requestedAt: r.data?.requested_at || null };
+}
+
+/** Let Claude read and change the Work section until `expiresAt` (ISO time, at most 24 h ahead). */
+export async function grantClaude(expiresAt) {
+  if (!vault.isUnlocked()) throw new Error('Unlock the Work section first');
+  const raw = await vault.exportVaultKey();
+  let sealed;
+  try {
+    sealed = await vault.sealTo(CONFIG.grantPublicKey, { v: 1, k: b64.enc(raw) }, 'work-grant');
+  } finally {
+    raw.fill(0);
+  }
+  const { error } = await sb.from('work_grants').upsert({ user_id: ns, sealed_key: sealed, expires_at: expiresAt }, { onConflict: 'user_id' });
+  if (error) throw new Error(error.message);
+  await sb.from('work_access_requests').delete().eq('user_id', ns);
+}
+
+export async function revokeClaude() {
+  const { error } = await sb.from('work_grants').delete().eq('user_id', ns);
+  if (error) throw new Error(error.message);
+}
+
+export async function denyClaude() {
+  const { error } = await sb.from('work_access_requests').delete().eq('user_id', ns);
+  if (error) throw new Error(error.message);
 }
 
 // ---------------------------------------------------------------- sync
@@ -237,21 +347,28 @@ export async function sync() {
     for (const table of TABLES) {
       // push local changes
       const dirty = db[table].filter((r) => r._dirty);
-      if (dirty.length) {
-        const sent = dirty.map((r) => ({ id: r.id, rev: r._rev }));
-        const rows = dirty.map((r) => Object.fromEntries(COLUMNS[table].map((c) => [c, r[c] ?? null])));
-        const { error } = await sb.from(table).upsert(rows, { onConflict: 'id' });
-        if (error) throw error;
+      for (let at = 0; at < dirty.length; at += 200) {
+        const batch = dirty.slice(at, at + 200);
+        const sent = batch.map((r) => ({ id: r.id, rev: r._rev }));
+        const rows = batch.map((r) => Object.fromEntries(COLUMNS[table].map((c) => [c, r[c] ?? null])));
+        const rejected = await pushRows(table, rows);
         for (const s of sent) {
           const r = db[table].find((x) => x.id === s.id);
           if (r && r._rev === s.rev) delete r._dirty; // untouched while the request was in flight
         }
+        if (rejected) bus.emit('sync-rejected', rejected);
         persist(table);
       }
       // pull remote changes (small overlap so nothing committed concurrently is missed)
+      // Pages are keyed on (updated_at, id) so rows sharing a timestamp are never skipped.
       let cursor = ls.get(key(`cursor:${table}`), '1970-01-01T00:00:00Z');
+      let lastId = null;
       for (;;) {
-        const { data, error } = await sb.from(table).select('*').gt('updated_at', cursor).order('updated_at').limit(500);
+        let q = sb.from(table).select('*').order('updated_at').order('id').limit(500);
+        q = lastId
+          ? q.or(`updated_at.gt."${cursor}",and(updated_at.eq."${cursor}",id.gt.${lastId})`)
+          : q.gt('updated_at', cursor);
+        const { data, error } = await q;
         if (error) throw error;
         for (const remote of data) {
           const i = db[table].findIndex((r) => r.id === remote.id);
@@ -265,7 +382,7 @@ export async function sync() {
           anyChange = true;
           if (table === 'vault_items') pulledVault = true;
         }
-        if (data.length) cursor = data[data.length - 1].updated_at;
+        if (data.length) { cursor = data[data.length - 1].updated_at; lastId = data[data.length - 1].id; }
         if (data.length < 500) break;
       }
       ls.set(key(`cursor:${table}`), new Date(new Date(cursor).getTime() - 5000).toISOString());
@@ -286,6 +403,28 @@ export async function sync() {
   }
 }
 
+// Postgres "data exception" (22xxx) and "integrity constraint" (23xxx) errors are about one row's contents.
+const isDataError = (e) => /^2[23]/.test(e?.code || '');
+
+/**
+ * Upsert rows. If the server rejects the batch because of the data itself, retry one by one
+ * so a single bad row cannot block syncing forever. Returns how many rows were rejected.
+ */
+async function pushRows(table, rows) {
+  const { error } = await sb.from(table).upsert(rows, { onConflict: 'id' });
+  if (!error) return 0;
+  if (!isDataError(error)) throw error;
+  let rejected = 0;
+  for (const row of rows) {
+    const { error: e1 } = await sb.from(table).upsert([row], { onConflict: 'id' });
+    if (!e1) continue;
+    if (!isDataError(e1)) throw e1;
+    console.warn(`server rejected ${table} ${row.id}:`, e1.message);
+    rejected++;
+  }
+  return rejected;
+}
+
 export const pendingCount = () => TABLES.reduce((n, t) => n + db[t].filter((r) => r._dirty).length, 0);
 
 /** Restore personal data from a backup made with exportData(). Existing records with the same id are overwritten. */
@@ -294,12 +433,13 @@ export function importData(json) {
   let n = 0;
   for (const table of ['categories', 'ideas', 'tasks']) {
     for (const raw of Array.isArray(json[table]) ? json[table] : []) {
-      if (!raw || typeof raw.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(raw.id)) continue;
+      if (!raw || !idOk(raw.id)) continue;
       const rec = { ...DEFAULTS[table] };
       for (const c of COLUMNS[table]) if (raw[c] !== undefined) rec[c] = raw[c];
-      rec.deleted_at = null;
-      rec.created_at ||= nowIso();
-      upsertLocal(table, rec);
+      const clean = sanitize(table, rec);
+      clean.deleted_at = null;
+      if (table === 'tasks') clean.remind_at = clean.completed_at ? null : remindAt(clean.due_date, clean.due_time);
+      upsertLocal(table, clean);
       n++;
     }
   }
