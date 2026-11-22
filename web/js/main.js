@@ -1,7 +1,7 @@
 // Boot, the app shell, routing and all delegated event handling.
 import { online, sb } from './backend.js';
 import * as store from './store.js';
-import { state, parseRoute } from './app.js';
+import { state, parseRoute, flushDialog } from './app.js';
 import { $, esc, bus, toast, ICON, safeColor, today, fmtLongDate } from './util.js';
 import * as tasks from './tasks.js';
 import * as ideas from './ideas.js';
@@ -289,7 +289,7 @@ function wireEvents() {
   }
   document.addEventListener('visibilitychange', () => {
     work.onVisibility();
-    if (!document.hidden) { store.sync(); work.refreshAccess(); }
+    if (!document.hidden) { store.sync(); work.refreshAccess(); checkForUpdate(); }
   });
 
   window.addEventListener('hashchange', () => {
@@ -393,8 +393,44 @@ function returnToConsent() {
   return false;
 }
 
+// ---------------------------------------------------------------- app updates
+
+let swReg = null;
+let lastUpdateCheck = 0;
+let reloadPending = false;
+
+/** Ask the browser to look for a new sw.js (at most once a minute). */
+function checkForUpdate() {
+  if (reloadPending && !document.hidden) return reloadIfSafe();
+  if (!swReg || Date.now() - lastUpdateCheck < 60000) return;
+  lastUpdateCheck = Date.now();
+  swReg.update().catch(() => null);
+}
+
+/** Reload into the new version, unless that would interrupt something; then wait for a calmer moment. */
+async function reloadIfSafe() {
+  const a = document.activeElement;
+  const typing = a && a.matches?.('input, textarea') && a.value && a.type !== 'checkbox' && a.type !== 'search';
+  const busy = document.querySelector('dialog[open]') || typing || !booted;
+  if (busy) {
+    if (!reloadPending) toast('Synaptask was updated. It reloads the next time you come back to it.');
+    reloadPending = true;
+    return;
+  }
+  await flushDialog().catch(() => null);
+  location.reload();
+}
+
+function watchForUpdates() {
+  const sw = navigator.serviceWorker;
+  const updating = !!sw.controller; // no controller yet = first install, not an update
+  sw.register('sw.js').then((reg) => { swReg = reg; lastUpdateCheck = Date.now(); }).catch((e) => console.warn('service worker', e));
+  if (updating) sw.addEventListener('controllerchange', () => { reloadIfSafe(); });
+  setInterval(checkForUpdate, 30 * 60000); // tabs and installed apps that stay open for days
+}
+
 async function boot() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker', e));
+  if ('serviceWorker' in navigator) watchForUpdates();
 
   if (online) {
     state.user = await auth.ensureSignedIn(root);

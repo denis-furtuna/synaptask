@@ -363,7 +363,9 @@ rather than a public issue.
 - **Reminders not arriving**: SQL Editor →
   `select * from cron.job_run_details order by start_time desc limit 5;` and Edge Functions → reminders → Logs.
 - **Claude sees no tasks**: Settings → Connected apps → Disconnect, then connect again from Claude.
-- **The app looks out of date**: the service worker fetches fresh files when online; reload once.
+- **The app looks out of date**: an open app checks for a new version when you come back to it and reloads
+  itself (or tells you it will, if you are in the middle of editing). To force it: Ctrl+Shift+R, or close and
+  reopen the installed app.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

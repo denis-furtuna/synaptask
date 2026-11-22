@@ -11,8 +11,12 @@ const SHELL = [
 ];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
+// GitHub Pages lets browsers reuse files for 10 minutes. 'reload' / 'no-cache' make sure a new version
+// is fetched (or revalidated with its ETag) instead of an old copy from the browser's HTTP cache.
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION)
+    .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -25,7 +29,7 @@ self.addEventListener('activate', (e) => {
 // Same-origin files: network first (always fresh when online), cache when offline or slow.
 async function networkFirst(req) {
   const cache = await caches.open(VERSION);
-  const net = fetch(req).then((res) => {
+  const net = fetch(new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' })).then((res) => {
     if (res.ok && res.type === 'basic') cache.put(req, res.clone());
     return res;
   });

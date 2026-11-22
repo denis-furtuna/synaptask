@@ -245,5 +245,8 @@ all rights reserved); do not add a LICENSE file.
 - `supabase/config.toml` holds only function settings. Auth settings are set in the dashboard; never
   run `supabase config push`.
 - `web/sw.js` precaches the app shell. When adding a file to `web/`, add it to `SHELL`. The deploy
-  workflow renames the cache per commit.
+  workflow renames the cache per commit. GitHub Pages sends `max-age=600`, so the worker fetches with
+  `cache: 'no-cache'` / `'reload'` (otherwise a deploy shows up 10 minutes late, with old and new files mixed).
+  `main.js` calls `registration.update()` when the app becomes visible (at most once a minute, and every 30 min)
+  and reloads on `controllerchange`, or defers with a notice while a dialog is open or text is being typed.
 - Run `deno test -A supabase/` and `tools/selftest.html` before committing.
