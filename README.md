@@ -76,7 +76,7 @@ Work tasks live in a separate, locked section that is end-to-end encrypted on yo
 - **Project ideas board** with the stages Idea → Planning → Building → Done. Each idea has notes,
   tags, links and its own task list.
 - **Shopping list** with your own categories (Groceries, For projects, Fun… editable); tick items off as you
-  buy them, link an item to a project idea.
+  buy them. Every project idea has its own shopping list too, inside the idea and as a filter in the list.
 - **Autosave**: tasks, ideas and shopping items save while you type and whenever the editor closes.
 - **Locked Work section**, encrypted with its own passphrase. Claude can always *add* work tasks; to
   read or change them it has to ask, and you approve in the app for a limited time (1 hour up to a day).

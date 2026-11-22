@@ -14,11 +14,11 @@ export const toBuyCount = () => store.list('shopping_items').filter((i) => !i.bo
 
 const matches = (i, q) => `${i.title}\n${i.quantity || ''}\n${i.notes || ''}`.toLowerCase().includes(q);
 
-function row(item, showCat) {
+function row(item, showCat, showIdea = true) {
   const id = esc(item.id);
   const bought = !!item.bought_at;
   const cat = showCat && item.category_id ? store.get('shopping_categories', item.category_id) : null;
-  const idea = item.idea_id ? store.get('ideas', item.idea_id) : null;
+  const idea = showIdea && item.idea_id ? store.get('ideas', item.idea_id) : null;
   const chips = [];
   if (item.quantity) chips.push(`<span class="chip plain">${esc(item.quantity)}</span>`);
   if (cat) chips.push(`<span class="chip plain"><i class="dot" style="background:${safeColor(cat.color)}"></i>${esc(cat.name)}</span>`);
@@ -34,34 +34,53 @@ function row(item, showCat) {
   </li>`;
 }
 
-export function viewTitle(route) {
+/** The items the current view shows: one category, one project, or everything. */
+function inView(route) {
   const cat = route.id ? store.get('shopping_categories', route.id) : null;
-  const open = store.list('shopping_items').filter((i) => !i.bought_at && (!cat || i.category_id === cat.id)).length;
-  return { title: cat ? cat.name : 'Shopping list', sub: `${open} to buy` };
+  const idea = route.idea ? store.get('ideas', route.idea) : null;
+  const items = store.list('shopping_items')
+    .filter((i) => (!cat || i.category_id === cat.id) && (!idea || i.idea_id === idea.id));
+  return { cat, idea, items };
+}
+
+export function viewTitle(route) {
+  const { cat, idea, items } = inView(route);
+  const open = items.filter((i) => !i.bought_at).length;
+  return { title: idea ? `Shopping · ${idea.title}` : cat ? cat.name : 'Shopping list', sub: `${open} to buy` };
 }
 
 export function renderShopping(route, query = '') {
   const cats = sortedShopCats();
-  const current = route.id ? cats.find((c) => c.id === route.id) || null : null;
+  const { cat: current, idea } = inView(route);
   const q = query.trim().toLowerCase();
-  const items = store.list('shopping_items')
-    .filter((i) => (!current || i.category_id === current.id) && (!q || matches(i, q)))
+  const items = inView(route).items
+    .filter((i) => !q || matches(i, q))
     .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
   const toBuy = items.filter((i) => !i.bought_at);
   const bought = items.filter((i) => i.bought_at).sort((a, b) => (a.bought_at < b.bought_at ? 1 : -1));
 
-  // Category filter chips
+  // Filters: category chips, and a project picker when any item belongs to a project
+  const all = store.list('shopping_items');
+  const projects = store.list('ideas')
+    .map((i) => ({ i, n: all.filter((s) => s.idea_id === i.id && !s.bought_at).length }))
+    .filter((p) => p.n || p.i.id === idea?.id)
+    .sort((a, b) => a.i.title.localeCompare(b.i.title));
   const filters = `<nav class="shop-filters" aria-label="Shopping categories">
-      <a class="chip-link ${!current ? 'on' : ''}" href="#/shopping">All</a>
+      <a class="chip-link ${!current && !idea ? 'on' : ''}" href="#/shopping">All</a>
       ${cats.map((c) => `<a class="chip-link ${current?.id === c.id ? 'on' : ''}" href="#/shopping/${esc(c.id)}"><i class="dot" style="background:${safeColor(c.color)}"></i>${esc(c.name)}</a>`).join('')}
+      ${projects.length ? `<select id="shop-project" class="chip-select ${idea ? 'on' : ''}" aria-label="Project">
+          <option value="">All projects</option>
+          ${projects.map((p) => `<option value="${esc(p.i.id)}" ${p.i.id === idea?.id ? 'selected' : ''}>${esc(p.i.title)} (${p.n})</option>`).join('')}
+        </select>` : ''}
       <button type="button" class="link-btn" data-act="cats-manage" data-table="shopping_categories">Edit categories</button>
     </nav>`;
 
-  // Quick add, with the category it goes into
-  const preferred = current?.id || ls.get(LAST_CAT, '');
+  // Quick add, with the category it goes into (and the project, when one is shown)
+  const preferred = current?.id || (idea ? projectCategoryId() : ls.get(LAST_CAT, ''));
   const sel = cats.some((c) => c.id === preferred) ? preferred : '';
   const quick = `<form class="quick" data-form="quick-shop" autocomplete="off">
-      <input id="quick-input" name="title" maxlength="300" placeholder="Add something to buy…  (press Enter)" aria-label="New item">
+      <input id="quick-input" name="title" maxlength="300" placeholder="${idea ? `Add something to buy for ${esc(idea.title)}…` : 'Add something to buy…  (press Enter)'}" aria-label="New item">
+      ${idea ? `<input type="hidden" name="idea_id" value="${esc(idea.id)}">` : ''}
       <select name="category_id" aria-label="Category" class="quick-cat">
         <option value="">No category</option>
         ${cats.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
@@ -72,14 +91,14 @@ export function renderShopping(route, query = '') {
   // To buy: grouped by category when showing everything
   let list;
   if (current) {
-    list = toBuy.length ? `<ul class="tasks">${toBuy.map((i) => row(i, false)).join('')}</ul>` : '';
+    list = toBuy.length ? `<ul class="tasks">${toBuy.map((i) => row(i, false, !idea)).join('')}</ul>` : '';
   } else {
     const groups = [...cats.map((c) => ({ c, items: toBuy.filter((i) => i.category_id === c.id) })),
       { c: null, items: toBuy.filter((i) => !i.category_id || !cats.some((c) => c.id === i.category_id)) }]
       .filter((g) => g.items.length);
     list = groups.map((g) => `<section class="group">
         <h3 class="group-h">${g.c ? `<i class="dot" style="background:${safeColor(g.c.color)}"></i>${esc(g.c.name)}` : 'No category'}<small>${g.items.length}</small></h3>
-        <ul class="tasks">${g.items.map((i) => row(i, false)).join('')}</ul>
+        <ul class="tasks">${g.items.map((i) => row(i, false, !idea)).join('')}</ul>
       </section>`).join('');
   }
   const empty = toBuy.length ? '' : `<div class="empty">${q ? 'Nothing matches your search.' : 'Nothing to buy. Add something above.'}</div>`;
@@ -88,21 +107,41 @@ export function renderShopping(route, query = '') {
         <button type="button" class="link-btn" data-act="shop-show-bought">${state.showBought ? 'Hide' : 'Show'} bought (${bought.length})</button>
         <button type="button" class="link-btn" data-act="shop-clear-bought">Clear bought</button>
       </div>
-      ${state.showBought ? `<ul class="tasks">${bought.map((i) => row(i, !current)).join('')}</ul>` : ''}`
+      ${state.showBought ? `<ul class="tasks">${bought.map((i) => row(i, !current, !idea)).join('')}</ul>` : ''}`
     : '';
   return `${filters}${quick}${list}${empty}${boughtHtml}`;
 }
+
+// Picking a project in the filter opens that project's shopping list.
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'shop-project') return;
+  location.hash = e.target.value ? `#/shopping/project/${e.target.value}` : '#/shopping';
+});
 
 export async function quickAdd(fd, form) {
   const title = String(fd.get('title') || '').trim();
   if (!title) return;
   const category_id = String(fd.get('category_id') || '') || null;
-  ls.set(LAST_CAT, category_id || '');
+  const idea_id = String(fd.get('idea_id') || '') || null;
+  if (!idea_id) ls.set(LAST_CAT, category_id || '');
   form.elements.title.value = '';
-  await store.save('shopping_items', { title, category_id });
+  await store.save('shopping_items', { title, category_id, idea_id });
 }
 
-async function toggleBought(id) {
+/** Items linked to a project idea, still to buy first. */
+export const itemsOfIdea = (ideaId) => store.list('shopping_items').filter((i) => i.idea_id === ideaId)
+  .sort((a, b) => (Number(!!a.bought_at) - Number(!!b.bought_at)) || (a.created_at < b.created_at ? -1 : 1));
+
+/** The shopping category new project items go into: the one named like "projects", if any. */
+export const projectCategoryId = () => sortedShopCats().find((c) => /project|proiect/i.test(c.name))?.id ?? null;
+
+/** Add an item to buy for a project idea. */
+export async function addForIdea(ideaId, title) {
+  title = title.trim();
+  if (title) await store.save('shopping_items', { title, idea_id: ideaId, category_id: projectCategoryId() });
+}
+
+export async function toggleBought(id) {
   const item = store.get('shopping_items', id);
   if (item) await store.save('shopping_items', { ...item, bought_at: item.bought_at ? null : nowIso() });
 }
@@ -112,15 +151,15 @@ export const actions = {
   'shop-open': (el) => openShoppingEditor(el.dataset.id),
   'shop-show-bought': () => { state.showBought = !state.showBought; rerender(); },
   'shop-clear-bought': async () => {
-    const bought = store.list('shopping_items').filter((i) => i.bought_at);
+    const bought = inView(state.route).items.filter((i) => i.bought_at); // only what this view shows
     if (!bought.length || !await confirmDialog(`Remove ${bought.length} bought item${bought.length === 1 ? '' : 's'} from the list?`, 'Clear')) return;
     for (const i of bought) await store.remove('shopping_items', i.id);
     toast('Bought items cleared');
   },
 };
 
-/** Edit an item. Saved while typing, like tasks and ideas. */
-export function openShoppingEditor(id) {
+/** Edit an item. Saved while typing, like tasks and ideas. `onDone` runs after Done or Delete. */
+export function openShoppingEditor(id, onDone) {
   const item = store.get('shopping_items', id);
   if (!item) return;
   const cats = sortedShopCats();
@@ -166,6 +205,7 @@ export function openShoppingEditor(id) {
       const rec = read(f);
       if (!rec) { toast('Say what to buy', 'warn'); return false; }
       await store.save('shopping_items', rec);
+      if (onDone) setTimeout(onDone, 0);
     },
     autosave: { collect: read, persist: (rec) => store.save('shopping_items', rec) },
     onAction: async (name, _el, f) => {
@@ -173,6 +213,7 @@ export function openShoppingEditor(id) {
         await f.discardAutosave();
         await store.remove('shopping_items', id);
         closeDialog();
+        if (onDone) setTimeout(onDone, 0);
       }
     },
   });

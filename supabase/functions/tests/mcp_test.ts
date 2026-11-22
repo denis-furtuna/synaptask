@@ -319,6 +319,15 @@ Deno.test({ name: 'mcp: shopping list', sanitizeResources: false, sanitizeOps: f
   const moved = await call(token, 'update_shopping_item', { id: milk.id, bought: false, category: null });
   assert(!moved.isError && milk.bought_at === null && milk.category_id === null, `back on the list, category cleared: ${moved.text}`);
 
+  // per project
+  const ideaId = (tables.ideas[0] as { id: string }).id;
+  const forIdea = await call(token, 'add_shopping_items', { items: [{ title: 'Raspberry Pi', category: 'For projects', idea_id: ideaId }] });
+  assert(!forIdea.isError, `add for a project: ${forIdea.text}`);
+  const ideaList = await call(token, 'list_shopping', { idea_id: ideaId });
+  assert(ideaList.json.count === 1 && ideaList.json.items[0].title === 'Raspberry Pi', `list_shopping by project: ${ideaList.text}`);
+  const ideaFull = await call(token, 'list_ideas', { id: ideaId });
+  assert(ideaFull.json.shopping?.length === 1 && ideaFull.json.shopping[0].category === 'For projects', `list_ideas includes its shopping list: ${ideaFull.text}`);
+
   const bat = tables.shopping_items.find((r) => r.title === 'Batteries')!;
   const del = await call(token, 'delete_shopping_item', { id: bat.id });
   assert(!del.isError && bat.deleted_at, `delete_shopping_item: ${del.text}`);

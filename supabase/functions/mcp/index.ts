@@ -466,7 +466,8 @@ Deno.serve(
 
         server.registerTool('list_ideas', {
           title: 'List project ideas',
-          description: 'List project ideas (stages: idea, planning, building, done). Pass an id to get one idea in full with its tasks.',
+          description: 'List project ideas (stages: idea, planning, building, done). Pass an id to get one idea in full with its tasks ' +
+            'and its shopping list (things to buy for it).',
           inputSchema: z.object({ id: id.optional(), stage: z.enum(STAGES).optional(), search: z.string().max(200).optional() }),
           annotations: { readOnlyHint: true },
         }, async ({ id: ideaId, stage, search }) => {
@@ -475,8 +476,14 @@ Deno.serve(
             if (error) throw new Error(error.message);
             if (!idea) throw new Error(`No idea with id ${ideaId}.`);
             const { data: tasks } = await supabase.from('tasks').select('*').eq('idea_id', ideaId).is('deleted_at', null);
+            const { data: shop } = await supabase.from('shopping_items').select('*').eq('idea_id', ideaId).is('deleted_at', null);
             const cats = await categories();
-            return text({ ...ideaOut(idea, true), tasks: (tasks ?? []).map((t) => taskOut(fromRow(t), cats)) });
+            const shopCats = await shopCategories();
+            return text({
+              ...ideaOut(idea, true),
+              tasks: (tasks ?? []).map((t) => taskOut(fromRow(t), cats)),
+              shopping: (shop ?? []).map((s) => shopOut(s, shopCats)),
+            });
           }
           let q = supabase.from('ideas').select('*').is('deleted_at', null).order('created_at', { ascending: false });
           if (stage) q = q.eq('stage', stage);
@@ -545,6 +552,7 @@ Deno.serve(
             'Bought items are left out unless include_bought is true.',
           inputSchema: z.object({
             category: z.string().max(100).optional().describe('Only this shopping category (name)'),
+            idea_id: id.optional().describe('Only what to buy for this project idea (list_ideas shows ids)'),
             include_bought: z.boolean().default(false),
             search: z.string().max(200).optional(),
           }),
@@ -555,6 +563,7 @@ Deno.serve(
           let q = supabase.from('shopping_items').select('*').is('deleted_at', null).order('created_at');
           if (!a.include_bought) q = q.is('bought_at', null);
           if (catId) q = q.eq('category_id', catId);
+          if (a.idea_id) q = q.eq('idea_id', a.idea_id);
           const { data, error } = await q.limit(500);
           if (error) throw new Error(error.message);
           const s = a.search?.toLowerCase();
@@ -564,7 +573,8 @@ Deno.serve(
 
         server.registerTool('add_shopping_items', {
           title: 'Add to the shopping list',
-          description: 'Add one or more things to buy. Use the user\'s shopping category names (list_shopping shows them).',
+          description: 'Add one or more things to buy. Use the user\'s shopping category names (list_shopping shows them). ' +
+            'For things needed for a project idea, pass its idea_id so they appear on that project\'s shopping list.',
           inputSchema: z.object({
             items: z.array(z.object({
               title: z.string().min(1).max(300),

@@ -71,7 +71,11 @@ the code. Read it fully before continuing. Delete the "Current status" section o
 - Shopping list (`shopping.js`, `0006_shopping.sql`): tables `shopping_categories` and `shopping_items` (personal, same
   RLS as tasks incl. `trusted_clients_only`). Starter categories are seeded once (local mode at init, online after the
   first clean sync) with ids derived from SHA-256(user id + name), so two devices write the same rows. The category
-  manager is shared: `openCategoryManager(space, 'shopping_categories')`. MCP tools: `list_shopping`,
+  manager is shared: `openCategoryManager(space, 'shopping_categories')`. Per project (owner's request 2026-11-23):
+  items with `idea_id` show in the idea editor ("To buy for this project", new ones go to the category named like
+  "project"), as a chip on the idea card, and at `#/shopping/project/<ideaId>` (the project picker in the filters).
+  "Clear bought" clears only the current view. `list_shopping` takes `idea_id`; `list_ideas` with an id returns
+  its `shopping` items. MCP tools: `list_shopping`,
   `add_shopping_items` (up to 50), `update_shopping_item` (incl. `bought`), `delete_shopping_item`; 19 tools in all.
 
 ## Security model

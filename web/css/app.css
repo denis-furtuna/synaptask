@@ -163,7 +163,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: .85; }
 .chip-link:hover { border-color: var(--accent); }
 .chip-link.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
 .shop-filters .link-btn { margin-left: 4px; font-size: 13px; }
+.chip-select { width: auto; padding: 5px 30px 5px 12px; border-radius: 999px; font-size: 13px; min-height: 0; }
+.chip-select.on { background-color: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
 .shop-bought { gap: 16px; margin: 6px 0 10px; }
+.field > .link-btn { justify-self: start; text-align: left; margin-top: 2px; }
 @media (max-width: 600px) {
   .quick:has(.quick-cat) { flex-wrap: wrap; }
   .quick:has(.quick-cat) input { flex-basis: 100%; }

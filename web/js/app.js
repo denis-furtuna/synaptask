@@ -17,7 +17,7 @@ export function parseRoute(hash = location.hash) {
   const p = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (p[0] === 'cat' && p[1]) return { view: 'cat', id: p[1] };
   if (p[0] === 'work') return { view: 'work', id: p[1] === 'cat' ? p[2] || null : null };
-  if (p[0] === 'shopping') return { view: 'shopping', id: p[1] || null };
+  if (p[0] === 'shopping') return p[1] === 'project' ? { view: 'shopping', id: null, idea: p[2] || null } : { view: 'shopping', id: p[1] || null };
   if (['today', 'upcoming', 'inbox', 'all', 'ideas', 'settings'].includes(p[0])) return { view: p[0] };
   return { view: 'today' };
 }
