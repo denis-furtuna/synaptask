@@ -1,7 +1,7 @@
 // The Work section: a passphrase-locked, end-to-end encrypted space.
 import * as store from './store.js';
 import * as vault from './vault.js';
-import { state, openDialog, rerender } from './app.js';
+import { state, openDialog, closeDialog, flushDialog, rerender } from './app.js';
 import { esc, toast, ls, ICON, safeColor, ymd, today } from './util.js';
 import { viewModel, renderTasks } from './tasks.js';
 
@@ -92,8 +92,13 @@ export function onVisibility() {
   }
   hiddenAt = 0;
 }
-export function lockNow() {
+export async function lockNow() {
   clearTimeout(idleTimer);
+  // An open work task is saved (encrypted) before the key goes, then its plaintext leaves the screen.
+  if (document.querySelector('#dlg [data-work-editor]')) {
+    await flushDialog().catch(() => null);
+    closeDialog();
+  }
   store.lockWork();
 }
 

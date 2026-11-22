@@ -5,6 +5,7 @@ import { state, parseRoute } from './app.js';
 import { $, esc, bus, toast, ICON, safeColor, today, fmtLongDate } from './util.js';
 import * as tasks from './tasks.js';
 import * as ideas from './ideas.js';
+import * as shopping from './shopping.js';
 import * as work from './work.js';
 import * as settings from './settings.js';
 import * as auth from './auth.js';
@@ -67,6 +68,7 @@ function sidebar(route) {
     ${navLink('#/inbox', ICON.inbox, 'Inbox', c.inbox, v === 'inbox')}
     ${navLink('#/all', ICON.all, 'All tasks', c.all, v === 'all')}
     ${navLink('#/ideas', ICON.idea, 'Project ideas', c.ideas, v === 'ideas')}
+    ${navLink('#/shopping', ICON.cart, 'Shopping list', shopping.toBuyCount(), v === 'shopping')}
     <div class="nav-h"><span>Categories</span><button type="button" data-act="cats-manage" data-space="personal">Edit</button></div>
     ${cats || '<div class="nav muted" style="font-size:13px">No categories yet</div>'}
     <div class="nav-h"><span>Locked</span></div>
@@ -99,6 +101,12 @@ function page(route) {
       body = ideas.renderIdeas(state.search);
       wide = true;
       break;
+    case 'shopping': {
+      ({ title, sub } = shopping.viewTitle(route));
+      if (searching) sub = `Items matching “${state.search.trim()}”`;
+      body = shopping.renderShopping(route, state.search);
+      break;
+    }
     case 'settings':
       title = 'Settings';
       body = settings.renderSettings();
@@ -190,6 +198,7 @@ function scheduleRender() {
 const ACTIONS = {
   ...tasks.actions,
   ...ideas.actions,
+  ...shopping.actions,
   ...work.actions,
   ...settings.actions,
   'task-new': () => {
@@ -198,7 +207,7 @@ const ACTIONS = {
   },
   'cats-manage': (el) => {
     if (state.navOpen) { state.navOpen = false; render(); }
-    settings.openCategoryManager(el.dataset.space || 'personal');
+    settings.openCategoryManager(el.dataset.space || 'personal', el.dataset.table || 'categories');
   },
   'nav-toggle': () => { state.navOpen = !state.navOpen; render(); },
   'nav-close': () => { state.navOpen = false; render(); },
@@ -226,6 +235,7 @@ const FORMS = {
     form.elements.title.value = '';
     await ideas.quickAddIdea(title);
   },
+  'quick-shop': (fd, form) => shopping.quickAdd(fd, form),
   ...work.forms,
 };
 

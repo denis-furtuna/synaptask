@@ -21,7 +21,12 @@ type PushRow = { id: string; user_id: string; endpoint: string; p256dh: string; 
 type GrantRow = { user_id: string; sealed_key: Json; expires_at: string; created_at: string; updated_at: string };
 type RequestRow = { user_id: string; requested_at: string; created_at: string; updated_at: string };
 type SettingsRow = { user_id: string; timezone: string; email_reminders: boolean; push_reminders: boolean; created_at: string; updated_at: string };
-type TrustedRow = { user_id: string; client_id: string; name: string; redirect_uri: string; created_at: string; updated_at: string };
+type ShopCategoryRow = Base & { name: string; color: string; position: number };
+type ShopItemRow = Base & {
+  category_id: string | null; idea_id: string | null; title: string; quantity: string; notes: string;
+  bought_at: string | null; source: string; position: number;
+};
+type TrustedRow ={ user_id: string; client_id: string; name: string; redirect_uri: string; created_at: string; updated_at: string };
 
 type Table<R> = { Row: R; Insert: Ins<R>; Update: Ins<R>; Relationships: [] };
 
@@ -40,6 +45,8 @@ export type Database = {
       work_grants: Table<GrantRow>;
       work_access_requests: Table<RequestRow>;
       trusted_clients: Table<TrustedRow>;
+      shopping_categories: Table<ShopCategoryRow>;
+      shopping_items: Table<ShopItemRow>;
     };
     Views: { [_ in never]: never };
     Functions: {

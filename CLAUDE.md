@@ -27,6 +27,9 @@ the code. Read it fully before continuing. Delete the "Current status" section o
   (Rejected alternatives: typing an authenticator code into the chat, because the server would have to hold
   the work key permanently; and always open.)
 - Commits: never add Claude as co-author or any Claude attribution line (owner's explicit wish).
+- **Added 2026-11-23:** autosave in every editor (the owner lost notes by forgetting Save), and a **Shopping list**
+  ("lista de cumpărături") with its own editable categories (starters: Groceries, For projects, Fun), items with
+  quantity, notes and an optional project idea, ticked off as bought; Claude can list, add, update and remove items.
 - "Secure everything well."
 - Task features: due dates + reminders, priorities, subtasks, recurring tasks
   (daily, weekly, monthly, yearly; the owner explicitly asked for daily, weekly and annual).
@@ -57,7 +60,19 @@ the code. Read it fully before continuing. Delete the "Current status" section o
   localStorage. This is how the UI can be tested before Supabase exists (`python -m http.server` in `web/`).
 - Local-first sync (`web/js/store.js`): every change is applied locally, marked `_dirty`, pushed with
   an upsert, then remote rows with a newer `updated_at` are pulled. Deletes are soft (`deleted_at`).
-  The server owns `updated_at` (trigger) and `reminded_at`; the client never sends them.
+  The server owns `updated_at` (trigger) and `reminded_at`; the client never sends them. Each table syncs on its
+  own (`syncTable`): one failing table (e.g. a new one not yet migrated) shows "Sync problem" but the rest still sync.
+  So when adding a table, push the migration before the web app.
+- Autosave (`openDialog(..., { autosave: { collect, persist } })` in `app.js`): saves 700 ms after the last edit and on
+  every close (X, Esc, backdrop, another dialog, page hidden). `collect` reads the form synchronously, `persist` calls
+  are serialised (a new task gets its id from the first save). Delete/Discard call `form.discardAutosave()` first so a
+  deleted record is never re-saved. Footer status `[data-autosave]`; buttons that must not trigger a save carry
+  `data-no-autosave`. `work.lockNow()` flushes an open work-task editor before dropping the key, then closes it.
+- Shopping list (`shopping.js`, `0006_shopping.sql`): tables `shopping_categories` and `shopping_items` (personal, same
+  RLS as tasks incl. `trusted_clients_only`). Starter categories are seeded once (local mode at init, online after the
+  first clean sync) with ids derived from SHA-256(user id + name), so two devices write the same rows. The category
+  manager is shared: `openCategoryManager(space, 'shopping_categories')`. MCP tools: `list_shopping`,
+  `add_shopping_items` (up to 50), `update_shopping_item` (incl. `bought`), `delete_shopping_item`; 19 tools in all.
 
 ## Security model
 

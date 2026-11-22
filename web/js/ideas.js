@@ -89,12 +89,17 @@ export function openIdeaEditor(id) {
         <span class="inline"><input type="text" id="idea-task-new" maxlength="500" placeholder="Add a task for this idea…"><button type="button" class="btn ghost" data-dact="task-add">Add</button></span></div>
     </div>
     <footer class="dlg-foot">
-      <button type="button" class="btn danger ghost" data-dact="delete">Delete</button>
+      <button type="button" class="btn danger ghost" data-dact="delete" data-no-autosave>Delete</button>
       <span class="grow"></span>
-      <button type="button" class="btn ghost" data-dact="close">Cancel</button>
-      <button class="btn primary">Save</button>
+      <span class="autosave-status" data-autosave aria-live="polite"></span>
+      <button class="btn primary">Done</button>
     </footer>`, {
     onSubmit: async (fd) => { await store.save('ideas', read(fd)); },
+    // Notes and everything else are saved while you type.
+    autosave: {
+      collect: (f) => read(new FormData(f)),
+      persist: (rec) => store.save('ideas', rec),
+    },
     onAction: async (name, el, f) => {
       const keep = () => store.save('ideas', read(new FormData(f))); // do not lose edits when the dialog redraws
       if (name === 'task-add') {
@@ -108,6 +113,7 @@ export function openIdeaEditor(id) {
       if (name === 'task-toggle') { await keep(); await toggleTask(el.dataset.id); reopen(); }
       if (name === 'task-open') { await keep(); openTaskEditor(el.dataset.id, reopen); }
       if (name === 'delete' && await confirmDialog(`Delete the idea “${idea.title}”? Its tasks are kept.`)) {
+        await f.discardAutosave(); // never re-save a deleted idea
         await store.remove('ideas', id);
         closeDialog();
         toast('Idea deleted');

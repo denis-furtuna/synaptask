@@ -75,6 +75,9 @@ Work tasks live in a separate, locked section that is end-to-end encrypted on yo
   monthly or yearly repeats.
 - **Project ideas board** with the stages Idea → Planning → Building → Done. Each idea has notes,
   tags, links and its own task list.
+- **Shopping list** with your own categories (Groceries, For projects, Fun… editable); tick items off as you
+  buy them, link an item to a project idea.
+- **Autosave**: tasks, ideas and shopping items save while you type and whenever the editor closes.
 - **Locked Work section**, encrypted with its own passphrase. Claude can always *add* work tasks; to
   read or change them it has to ask, and you approve in the app for a limited time (1 hour up to a day).
 - **Claude connector** over MCP and OAuth, limited to Claude and approved with an authenticator code.
@@ -290,6 +293,7 @@ Ask Claude in any chat:
 
 - *"Add 'renew passport' to Synaptask for next Friday, high priority."*
 - *"What's due today?"*
+- *"Add milk, eggs and 2 rolls of PLA (for projects) to my shopping list."*
 - *"Put 'prepare Q4 review' in my work tasks."*
 - *"What's on my work list this week?"* This one needs your approval: open Synaptask → **Work**, pick a
   duration, tap **Allow**, then tell Claude to try again.
@@ -298,7 +302,7 @@ Ask Claude in any chat:
 
 ### What Claude can and cannot do
 
-| | Personal tasks, categories, ideas | Work section |
+| | Personal tasks, categories, ideas, shopping list | Work section |
 |---|---|---|
 | Claude, normally | read, add, change, complete, delete | **add only** (sealed; cannot read, list or change) |
 | Claude, while you allow it | same | read, add, change, complete, delete, until the time you chose (max 24 h) |
@@ -311,7 +315,8 @@ limit or *Stop now* does.
 ### Connector tools
 
 `list_categories`, `list_tasks`, `add_task`, `update_task`, `complete_task`, `delete_task`, `list_ideas`,
-`add_idea`, `update_idea`, `add_work_task`, and with your approval `list_work_categories`, `list_work_tasks`,
+`add_idea`, `update_idea`, `list_shopping`, `add_shopping_items`, `update_shopping_item`, `delete_shopping_item`,
+`add_work_task`, and with your approval `list_work_categories`, `list_work_tasks`,
 `update_work_task`, `complete_work_task`, `delete_work_task`.
 
 ### Keyboard
@@ -389,8 +394,6 @@ Rules of the codebase:
 - [x] Push and email reminders
 - [ ] Verify push on iPhone (installed to the Home Screen)
 - [ ] Google Play release as a Trusted Web Activity
-
-See the [open issues](https://github.com/denis-furtuna/synaptask/issues) for known problems.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

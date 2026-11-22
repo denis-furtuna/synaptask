@@ -2,6 +2,8 @@
 // Runs the real MCP function against a tiny mock of the Supabase REST API, with JWTs signed by a
 // test key, and talks to it the way Claude does (JSON-RPC over Streamable HTTP).
 import * as vault from '../../../web/js/vault.js';
+import { nextDue } from '../_shared/recurrence.ts';
+import { todayIn } from '../_shared/time.ts';
 
 const FN_PORT = 18731, DB_PORT = 18732;
 const DB = `http://127.0.0.1:${DB_PORT}`;
@@ -37,6 +39,11 @@ const tables: Record<string, Row[]> = {
   user_settings: [{ user_id: USER, timezone: 'Europe/Bucharest' }],
   categories: [{ id: 'c0000000-0000-4000-8000-000000000001', name: 'Home', position: 0, deleted_at: null }],
   tasks: [], ideas: [], vault_inbox: [], vault_items: [], work_grants: [], work_access_requests: [], push_subscriptions: [],
+  shopping_categories: [
+    { id: 's0000000-0000-4000-8000-000000000001', name: 'Groceries', position: 0, deleted_at: null },
+    { id: 's0000000-0000-4000-8000-000000000002', name: 'For projects', position: 1, deleted_at: null },
+  ],
+  shopping_items: [],
 };
 const seen: string[] = [];
 /** The user's trusted apps (trusted_clients); the mock answers rpc/oauth_client_trusted from it. */
@@ -160,9 +167,9 @@ Deno.test({ name: 'mcp: tools', sanitizeResources: false, sanitizeOps: false }, 
   assert(init.body?.result?.serverInfo?.name === 'synaptask', `initialize: ${JSON.stringify(init.body)}`);
   const list = await rpc(token, 'tools/list');
   const names = (list.body?.result?.tools || []).map((t: any) => t.name).sort();
-  assert(JSON.stringify(names) === JSON.stringify(['add_idea', 'add_task', 'add_work_task', 'complete_task', 'complete_work_task',
-    'delete_task', 'delete_work_task', 'list_categories', 'list_ideas', 'list_tasks', 'list_work_categories', 'list_work_tasks',
-    'update_idea', 'update_task', 'update_work_task']), `tools: ${names}`);
+  assert(JSON.stringify(names) === JSON.stringify(['add_idea', 'add_shopping_items', 'add_task', 'add_work_task', 'complete_task', 'complete_work_task',
+    'delete_shopping_item', 'delete_task', 'delete_work_task', 'list_categories', 'list_ideas', 'list_shopping', 'list_tasks',
+    'list_work_categories', 'list_work_tasks', 'update_idea', 'update_shopping_item', 'update_task', 'update_work_task']), `tools: ${names}`);
 
   const added = await call(token, 'add_task', {
     title: 'Water the plants', category: 'home', priority: 'medium', due_date: '2026-11-20', due_time: '09:30',
@@ -182,8 +189,10 @@ Deno.test({ name: 'mcp: tools', sanitizeResources: false, sanitizeOps: false }, 
   assert(badDate.isError, 'invalid date rejected by the schema');
 
   const done = await call(token, 'complete_task', { id: row.id });
-  assert(!done.isError && /next due 2026-11-23/.test(done.text), `recurring completes forward: ${done.text}`);
-  assert(row.completed_at === null && row.due_date === '2026-11-23', 'still open, moved to Monday');
+  // The next date depends on today (it always lands after today), so compute what to expect.
+  const expected = nextDue('2026-11-20', { freq: 'weekly', interval: 1, days: [1, 5] }, todayIn('Europe/Bucharest'));
+  assert(!done.isError && done.text.includes(`next due ${expected}`), `recurring completes forward to ${expected}: ${done.text}`);
+  assert(row.completed_at === null && row.due_date === expected, 'still open, moved to the next Mon/Fri');
 
   const upd = await call(token, 'update_task', { id: row.id, recurrence: null, due_date: null, add_steps: ['Garden'] });
   assert(!upd.isError, `update_task: ${upd.text}`);
@@ -279,12 +288,51 @@ Deno.test({ name: 'mcp: work section with and without a grant', sanitizeResource
   assert(after.isError && /Allow/.test(after.text), 'expired grant -> locked again');
 });
 
+Deno.test({ name: 'mcp: shopping list', sanitizeResources: false, sanitizeOps: false }, async () => {
+  const added = await call(token, 'add_shopping_items', { items: [
+    { title: 'Milk', quantity: '2 l', category: 'groceries' },
+    { title: 'PLA filament', category: 'For projects', notes: 'black' },
+    { title: 'Batteries' },
+  ] });
+  assert(!added.isError && added.json.added.length === 3, `add_shopping_items: ${added.text}`);
+  const milk = tables.shopping_items.find((r) => r.title === 'Milk')!;
+  assert(milk.category_id === 's0000000-0000-4000-8000-000000000001' && milk.quantity === '2 l' && milk.source === 'claude',
+    `category resolved by name, case-insensitive: ${JSON.stringify(milk)}`);
+  assert(tables.shopping_items.find((r) => r.title === 'Batteries')!.category_id === null, 'no category');
+
+  const badCat = await call(token, 'add_shopping_items', { items: [{ title: 'x', category: 'Nope' }] });
+  assert(badCat.isError && /Groceries/.test(badCat.text) && !tables.shopping_items.some((r) => r.title === 'x'),
+    `unknown shopping category -> helpful error, nothing added: ${badCat.text}`);
+
+  const list = await call(token, 'list_shopping', {});
+  assert(!list.isError && list.json.count === 3 && list.json.categories.join() === 'Groceries,For projects', `list_shopping: ${list.text}`);
+  const onlyProjects = await call(token, 'list_shopping', { category: 'for projects' });
+  assert(onlyProjects.json.count === 1 && onlyProjects.json.items[0].title === 'PLA filament', `category filter: ${onlyProjects.text}`);
+
+  const bought = await call(token, 'update_shopping_item', { id: milk.id, bought: true, quantity: '3 l' });
+  assert(!bought.isError && milk.bought_at && milk.quantity === '3 l', `mark bought: ${bought.text}`);
+  const after = await call(token, 'list_shopping', {});
+  assert(after.json.count === 2 && !after.json.items.some((i: any) => i.title === 'Milk'), 'bought items are left out');
+  const withBought = await call(token, 'list_shopping', { include_bought: true });
+  assert(withBought.json.count === 3 && withBought.json.items.find((i: any) => i.title === 'Milk').bought === true, 'include_bought shows them');
+
+  const moved = await call(token, 'update_shopping_item', { id: milk.id, bought: false, category: null });
+  assert(!moved.isError && milk.bought_at === null && milk.category_id === null, `back on the list, category cleared: ${moved.text}`);
+
+  const bat = tables.shopping_items.find((r) => r.title === 'Batteries')!;
+  const del = await call(token, 'delete_shopping_item', { id: bat.id });
+  assert(!del.isError && bat.deleted_at, `delete_shopping_item: ${del.text}`);
+  const missing = await call(token, 'update_shopping_item', { id: bat.id, bought: true });
+  assert(missing.isError && /No shopping item/.test(missing.text), 'deleted item is gone');
+});
+
 Deno.test({ name: 'mcp: an app that is not on the trusted list gets nothing', sanitizeResources: false, sanitizeOps: false }, async () => {
   const evil = await jwt({ sub: USER, role: 'authenticated', aal: 'aal2', email: 'me@example.com', client_id: 'look-alike' });
   const list = await rpc(evil, 'tools/list');
-  assert((list.body?.result?.tools || []).length === 15, 'tools/list still answers (nothing secret in it)');
+  assert((list.body?.result?.tools || []).length === 19, 'tools/list still answers (nothing secret in it)');
   const before = seen.length;
-  for (const [name, args] of [['list_tasks', {}], ['add_task', { title: 'planted' }], ['list_work_tasks', {}], ['add_work_task', { title: 'planted' }]] as const) {
+  for (const [name, args] of [['list_tasks', {}], ['add_task', { title: 'planted' }], ['list_work_tasks', {}], ['add_work_task', { title: 'planted' }],
+    ['list_shopping', {}], ['add_shopping_items', { items: [{ title: 'planted' }] }]] as const) {
     const r = await call(evil, name, args);
     assert(r.isError && /not on the trusted list/.test(r.text), `${name} refused for an untrusted app: ${r.text}`);
   }

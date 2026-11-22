@@ -214,6 +214,43 @@ Deno.test({ name: 'rls: every caller sees exactly what it should', sanitizeResou
   ok(!r.error, `connector adds task: ${r.error?.message}`);
   r = await as(claudeA, `update public.ideas set stage = 'planning' where title = 'Idea A'`);
   ok(!r.error && r.affected === 1, 'connector updates idea');
+
+  // --- shopping list (0006_shopping.sql)
+  r = await as(userA, `insert into public.shopping_categories (id, name, color) values ('aaaaaaaa-0000-4000-8000-0000000000c1', 'Groceries', '#5bbf7a') returning user_id`);
+  ok(!r.error && r.rows[0]?.user_id === A, `A adds a shopping category: ${r.error?.message}`);
+  r = await as(userA, `insert into public.shopping_items (title, quantity, category_id) values ('Milk', '2 l', 'aaaaaaaa-0000-4000-8000-0000000000c1')`);
+  ok(!r.error, `A adds a shopping item: ${r.error?.message}`);
+  for (const [sql, what] of [
+    [`insert into public.shopping_items (title) values (repeat('x', 301))`, 'item title 301 chars'],
+    [`insert into public.shopping_items (title, quantity) values ('x', repeat('9', 51))`, 'quantity 51 chars'],
+    [`insert into public.shopping_items (title, source) values ('x', 'evil')`, 'item source evil'],
+    [`insert into public.shopping_categories (name, color) values ('x', 'red')`, 'shopping category bad colour'],
+  ]) {
+    r = await as(userA, sql);
+    ok(r.error && /^2[23]/.test(r.error.code), `${what} must be rejected by a constraint (got ${r.error?.code || 'no error'})`);
+  }
+  for (const t of ['shopping_categories', 'shopping_items']) {
+    r = await as(userAaal1, `select count(*)::int n from public.${t}`);
+    ok(r.rows[0]?.n === 0, `aal1 reads nothing from ${t}`);
+    r = await as(userB, `select count(*)::int n from public.${t}`);
+    ok(r.rows[0]?.n === 0, `B reads nothing of A's ${t}`);
+    r = await as(evilA, `select count(*)::int n from public.${t}`);
+    ok(r.rows[0]?.n === 0, `untrusted app reads nothing from ${t}`);
+    r = await as(null, `select count(*) from public.${t}`);
+    ok(r.error?.code === '42501', `anon has no privilege on ${t} (got ${r.error?.code})`);
+  }
+  r = await as(userAaal1, `insert into public.shopping_items (title) values ('sneaky')`);
+  ok(r.error?.code === '42501', `aal1 cannot add shopping items (got ${r.error?.code})`);
+  r = await as(evilA, `insert into public.shopping_items (title) values ('planted')`);
+  ok(r.error?.code === '42501', `untrusted app cannot add shopping items (got ${r.error?.code})`);
+  r = await as(claudeA, `select count(*)::int n from public.shopping_items`);
+  ok(r.rows[0]?.n === 1, `trusted connector reads the shopping list (got ${r.rows[0]?.n})`);
+  r = await as(claudeA, `insert into public.shopping_items (title, source) values ('Eggs', 'claude')`);
+  ok(!r.error, `trusted connector adds to the shopping list: ${r.error?.message}`);
+  r = await as(claudeA, `update public.shopping_items set bought_at = now() where title = 'Milk'`);
+  ok(!r.error && r.affected === 1, 'trusted connector ticks an item off');
+  r = await as(claudeA, `select count(*)::int n from public.shopping_categories`);
+  ok(r.rows[0]?.n === 1, 'trusted connector reads the shopping categories');
   for (const t of ['vault_items', 'vaults', 'push_subscriptions']) {
     r = await as(claudeA, `select count(*)::int n from public.${t}`);
     ok(r.rows[0]?.n === 0, `connector reads nothing from ${t}`);

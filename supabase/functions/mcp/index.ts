@@ -76,6 +76,7 @@ const UPDATE_HELP = 'Only the fields you pass change; pass null to clear a date,
 
 type TaskRow = Database['public']['Tables']['tasks']['Row'];
 type IdeaRow = Database['public']['Tables']['ideas']['Row'];
+type ShopRow = Database['public']['Tables']['shopping_items']['Row'];
 type Sub = { id: string; title: string; done: boolean };
 type Cat = { id: string; name: string };
 type RuleIn = z.infer<typeof recurrence>;
@@ -111,6 +112,31 @@ function findCategory(cats: Cat[], input: string | null | undefined): string | n
       'Leave the category empty for no category.');
   }
   return hit.id;
+}
+
+/** Resolve a shopping category name (or id); null/'' means no category. */
+function findShopCategory(cats: Cat[], input: string | null | undefined): string | null | undefined {
+  if (input === undefined) return undefined;
+  if (input === null || input.trim() === '') return null;
+  const want = input.trim().toLowerCase();
+  const hit = cats.find((c) => c.id === input) || cats.find((c) => c.name.toLowerCase() === want);
+  if (!hit) {
+    throw new Error(`There is no shopping category "${input}". Shopping categories: ${cats.map((c) => c.name).join(', ') || '(none)'}. ` +
+      'Leave the category empty for no category.');
+  }
+  return hit.id;
+}
+
+function shopOut(i: ShopRow, cats: Cat[]) {
+  return {
+    id: i.id,
+    title: i.title,
+    ...(i.quantity ? { quantity: i.quantity } : {}),
+    category: i.category_id ? cats.find((c) => c.id === i.category_id)?.name ?? null : null,
+    ...(i.notes ? { notes: i.notes } : {}),
+    ...(i.idea_id ? { idea_id: i.idea_id } : {}),
+    bought: !!i.bought_at,
+  };
 }
 
 function taskOut(t: Task, cats: Cat[]) {
@@ -241,6 +267,23 @@ Deno.serve(
         const { data, error } = await supabase.from('tasks').update(toDb(patch)).eq('id', taskId).select('*').single();
         if (error) throw new Error(error.message);
         return fromRow(data);
+      };
+
+      // ------------------------------------------------------------ shopping list
+
+      let shopCatCache: Cat[] | null = null;
+      const shopCategories = async () => {
+        if (shopCatCache) return shopCatCache;
+        const { data, error } = await supabase.from('shopping_categories').select('id, name, position').is('deleted_at', null).order('position');
+        if (error) throw new Error(error.message);
+        shopCatCache = data;
+        return shopCatCache;
+      };
+      const getShopItem = async (itemId: string) => {
+        const { data, error } = await supabase.from('shopping_items').select('*').eq('id', itemId).is('deleted_at', null).maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data) throw new Error(`No shopping item with id ${itemId}. Use list_shopping to find it.`);
+        return data;
       };
 
       const ideaOut = (i: IdeaRow, full: boolean) => ({
@@ -492,6 +535,98 @@ Deno.serve(
           const { data, error } = await supabase.from('ideas').update(patch).eq('id', a.id).select('*').single();
           if (error) throw new Error(error.message);
           return text({ updated: ideaOut(data, true) });
+        });
+
+        // ---------------------------------------------------------- Shopping list
+
+        server.registerTool('list_shopping', {
+          title: 'List the shopping list',
+          description: 'What is on the shopping list, with its categories (for example Groceries, For projects, Fun). ' +
+            'Bought items are left out unless include_bought is true.',
+          inputSchema: z.object({
+            category: z.string().max(100).optional().describe('Only this shopping category (name)'),
+            include_bought: z.boolean().default(false),
+            search: z.string().max(200).optional(),
+          }),
+          annotations: { readOnlyHint: true },
+        }, async (a) => {
+          const cats = await shopCategories();
+          const catId = findShopCategory(cats, a.category);
+          let q = supabase.from('shopping_items').select('*').is('deleted_at', null).order('created_at');
+          if (!a.include_bought) q = q.is('bought_at', null);
+          if (catId) q = q.eq('category_id', catId);
+          const { data, error } = await q.limit(500);
+          if (error) throw new Error(error.message);
+          const s = a.search?.toLowerCase();
+          const rows = s ? data.filter((i) => `${i.title}\n${i.quantity}\n${i.notes}`.toLowerCase().includes(s)) : data;
+          return text({ categories: cats.map((c) => c.name), count: rows.length, items: rows.map((i) => shopOut(i, cats)) });
+        });
+
+        server.registerTool('add_shopping_items', {
+          title: 'Add to the shopping list',
+          description: 'Add one or more things to buy. Use the user\'s shopping category names (list_shopping shows them).',
+          inputSchema: z.object({
+            items: z.array(z.object({
+              title: z.string().min(1).max(300),
+              quantity: z.string().max(50).optional().describe('e.g. "2", "1 kg", "a pack"'),
+              category: z.string().max(100).optional().describe('Shopping category name'),
+              notes: z.string().max(5000).optional(),
+              idea_id: id.optional().describe('The project idea this is for (list_ideas shows ids)'),
+            })).min(1).max(50),
+          }),
+        }, async (a) => {
+          const cats = await shopCategories();
+          const rows = a.items.map((i) => ({
+            title: i.title.trim(), quantity: (i.quantity ?? '').trim(), notes: i.notes ?? '',
+            category_id: findShopCategory(cats, i.category) ?? null, idea_id: i.idea_id ?? null, source: 'claude',
+          }));
+          const added = [];
+          for (const r of rows) {
+            const { data, error } = await supabase.from('shopping_items').insert(r).select('*').single();
+            if (error) throw new Error(error.message);
+            added.push(shopOut(data, cats));
+          }
+          return text({ added });
+        });
+
+        server.registerTool('update_shopping_item', {
+          title: 'Update a shopping list item',
+          description: 'Change an item, or mark it bought (bought: true) or back on the list (bought: false). ' +
+            'Pass null to clear the category or the project.',
+          inputSchema: z.object({
+            id,
+            title: z.string().min(1).max(300).optional(),
+            quantity: z.string().max(50).optional(),
+            category: z.string().max(100).nullable().optional(),
+            notes: z.string().max(5000).optional(),
+            idea_id: id.nullable().optional(),
+            bought: z.boolean().optional(),
+          }),
+        }, async (a) => {
+          const item = await getShopItem(a.id);
+          const cats = await shopCategories();
+          const patch: Database['public']['Tables']['shopping_items']['Update'] = {};
+          if (a.title !== undefined) patch.title = a.title.trim();
+          if (a.quantity !== undefined) patch.quantity = a.quantity.trim();
+          if (a.notes !== undefined) patch.notes = a.notes;
+          if (a.category !== undefined) patch.category_id = findShopCategory(cats, a.category) ?? null;
+          if (a.idea_id !== undefined) patch.idea_id = a.idea_id;
+          if (a.bought !== undefined) patch.bought_at = a.bought ? (item.bought_at ?? new Date().toISOString()) : null;
+          const { data, error } = await supabase.from('shopping_items').update(patch).eq('id', a.id).select('*').single();
+          if (error) throw new Error(error.message);
+          return text({ updated: shopOut(data, cats) });
+        });
+
+        server.registerTool('delete_shopping_item', {
+          title: 'Remove from the shopping list',
+          description: 'Remove an item from the shopping list entirely. To tick it off instead, use update_shopping_item with bought: true.',
+          inputSchema: z.object({ id }),
+          annotations: { destructiveHint: true },
+        }, async ({ id: itemId }) => {
+          const item = await getShopItem(itemId);
+          const { error } = await supabase.from('shopping_items').update({ deleted_at: new Date().toISOString() }).eq('id', itemId);
+          if (error) throw new Error(error.message);
+          return text(`Removed “${item.title}” from the shopping list.`);
         });
 
         // ---------------------------------------------------------- Work

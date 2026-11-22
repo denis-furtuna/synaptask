@@ -4,7 +4,7 @@ const VERSION = 'synaptask-v1';
 const SHELL = [
   './', 'index.html', 'consent.html', 'manifest.webmanifest',
   'css/themes.css', 'css/app.css', 'vendor/supabase.js',
-  'js/app.js', 'js/auth.js', 'js/backend.js', 'js/config.js', 'js/consent.js', 'js/ideas.js', 'js/main.js',
+  'js/app.js', 'js/auth.js', 'js/backend.js', 'js/config.js', 'js/consent.js', 'js/ideas.js', 'js/main.js', 'js/shopping.js',
   'js/recurrence.js', 'js/settings.js', 'js/store.js', 'js/tasks.js', 'js/theme-boot.js', 'js/util.js',
   'js/vault.js', 'js/work.js',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',

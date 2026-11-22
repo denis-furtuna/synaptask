@@ -366,10 +366,14 @@ document.addEventListener('change', (e) => {
 const UP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
 const DOWN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
-/** Rename, recolour, reorder, add and delete the categories of one space ('personal' or 'work'). */
-export function openCategoryManager(space = 'personal') {
+/**
+ * Rename, recolour, reorder, add and delete categories: task categories of one space
+ * ('personal' or 'work'), or the shopping list's categories (table 'shopping_categories').
+ */
+export function openCategoryManager(space = 'personal', table = 'categories') {
   if (space === 'work' && !store.workUnlocked()) return toast('Unlock the Work section first', 'warn');
-  let rows = [...store.list('categories', space)]
+  const shop = table === 'shopping_categories';
+  let rows = [...store.list(table, space)]
     .sort((a, b) => (a.position - b.position) || a.name.localeCompare(b.name))
     .map((c) => ({ id: c.id, name: c.name, color: safeColor(c.color), orig: c }));
   let palette = -1;
@@ -386,7 +390,7 @@ export function openCategoryManager(space = 'personal') {
   </li>`;
 
   const form = openDialog(`
-    <header class="dlg-head"><h2>${space === 'work' ? 'Work categories' : 'Categories'}</h2>
+    <header class="dlg-head"><h2>${shop ? 'Shopping categories' : space === 'work' ? 'Work categories' : 'Categories'}</h2>
       <button type="button" class="icon-btn" data-dact="close" aria-label="Close">${ICON.x}</button></header>
     <div class="dlg-body">
       <ul class="cat-list" data-cats></ul>
@@ -400,9 +404,9 @@ export function openCategoryManager(space = 'personal') {
       for (const [i, r] of rows.entries()) {
         const name = r.name.trim();
         if (!r.id) {
-          if (name) await store.save('categories', { name, color: r.color, position: i }, space);
+          if (name) await store.save(table, { name, color: r.color, position: i }, space);
         } else if (name !== r.orig.name || r.color !== r.orig.color || i !== r.orig.position) {
-          await store.save('categories', { ...r.orig, name: name || r.orig.name, color: r.color, position: i }, space);
+          await store.save(table, { ...r.orig, name: name || r.orig.name, color: r.color, position: i }, space);
         }
       }
     },
@@ -417,9 +421,9 @@ export function openCategoryManager(space = 'personal') {
       if (name === 'cat-del') {
         const r = rows[i];
         if (r.id) {
-          const where = space === 'work' ? 'Work → All' : 'the Inbox';
-          if (!await confirmDialog(`Delete “${r.orig.name}”? Its tasks move to ${where}.`)) return;
-          await store.remove('categories', r.id);
+          const what = shop ? 'items move to No category' : `tasks move to ${space === 'work' ? 'Work → All' : 'the Inbox'}`;
+          if (!await confirmDialog(`Delete “${r.orig.name}”? Its ${what}.`)) return;
+          await store.remove(table, r.id);
         }
         rows.splice(i, 1);
         palette = -1;

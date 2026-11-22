@@ -152,6 +152,23 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: .85; }
 
 .quick { display: flex; gap: 8px; margin: 6px 0 18px; }
 .quick input { flex: 1; border-style: dashed !important; background: var(--card) !important; }
+.quick .quick-cat { width: auto; max-width: 38%; flex: none; }
+
+/* shopping list */
+.shop-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; }
+.chip-link {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 13px;
+  color: var(--text); text-decoration: none; border: 1px solid var(--line); background: var(--card);
+}
+.chip-link:hover { border-color: var(--accent); }
+.chip-link.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.shop-filters .link-btn { margin-left: 4px; font-size: 13px; }
+.shop-bought { gap: 16px; margin: 6px 0 10px; }
+@media (max-width: 600px) {
+  .quick:has(.quick-cat) { flex-wrap: wrap; }
+  .quick:has(.quick-cat) input { flex-basis: 100%; }
+  .quick .quick-cat { max-width: none; flex: 1; }
+}
 
 .group { margin-bottom: 20px; }
 .group-h {
@@ -280,6 +297,7 @@ dialog::backdrop { background: rgba(10,12,16,.55); }
 .dlg-foot { display: flex; align-items: center; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .confirm-msg { padding: 20px 18px 8px; margin: 0; }
 #confirm .dlg-foot { border-top: 0; }
+.autosave-status { color: var(--muted); font-size: 13px; min-width: 64px; text-align: right; }
 
 .days { display: flex; flex-wrap: wrap; gap: 6px; }
 .day { position: relative; }

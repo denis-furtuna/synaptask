@@ -212,7 +212,7 @@ export function openTaskEditor(idOrDraft, onDone) {
     </li>`).join('');
 
   const form = openDialog(`
-    <header class="dlg-head"><h2>${existing ? 'Edit task' : 'New task'}${space === 'work' ? ' <span class="chip plain">Work</span>' : ''}</h2>
+    <header class="dlg-head"><h2${space === 'work' ? ' data-work-editor' : ''}>${existing ? 'Edit task' : 'New task'}${space === 'work' ? ' <span class="chip plain">Work</span>' : ''}</h2>
       <button type="button" class="icon-btn" data-dact="close" aria-label="Close">${ICON.x}</button></header>
     <div class="dlg-body">
       <label class="field"><span>Title</span><input name="title" maxlength="500" value="${esc(draft.title || '')}" ${existing ? '' : 'autofocus'}></label>
@@ -239,40 +239,35 @@ export function openTaskEditor(idOrDraft, onDone) {
         <span class="inline"><input type="text" id="sub-new" maxlength="300" placeholder="Add a step…"><button type="button" class="btn ghost" data-dact="sub-add">Add</button></span></div>
     </div>
     <footer class="dlg-foot">
-      ${existing ? '<button type="button" class="btn danger ghost" data-dact="delete">Delete</button>' : ''}
+      ${existing
+        ? '<button type="button" class="btn danger ghost" data-dact="delete" data-no-autosave>Delete</button>'
+        : '<button type="button" class="btn ghost" data-dact="discard" data-no-autosave>Discard</button>'}
       <span class="grow"></span>
-      <button type="button" class="btn ghost" data-dact="close">Cancel</button>
-      <button class="btn primary">Save</button>
+      <span class="autosave-status" data-autosave aria-live="polite"></span>
+      <button class="btn primary">Done</button>
     </footer>`, {
     onSubmit: async (fd) => {
-      const title = String(fd.get('title')).trim();
-      if (!title) { toast('Give the task a title', 'warn'); return false; }
+      if (!String(fd.get('title')).trim()) { toast('Give the task a title', 'warn'); return false; }
       readSubs(); addPendingSub();
-      let dueDate = fd.get('due_date') || null;
-      const freq = fd.get('freq');
-      if (freq && !dueDate) dueDate = today(); // a repeating task needs a starting date
-      const recurrence = freq
-        ? anchorRule({ freq, interval: Number(fd.get('interval')) || 1, days: fd.getAll('days').map(Number) }, dueDate)
-        : null;
-      await store.save('tasks', {
-        ...draft,
-        title,
-        notes: String(fd.get('notes')),
-        category_id: fd.get('category_id') || null,
-        priority: Number(fd.get('priority')) || 0,
-        due_date: dueDate,
-        due_time: dueDate ? fd.get('due_time') || null : null,
-        recurrence,
-        idea_id: fd.has('idea_id') ? fd.get('idea_id') || null : draft.idea_id || null,
-        subtasks: subs.filter((s) => s.title.trim()),
-      }, space);
+      await persist(build(fd));
       if (onDone) setTimeout(onDone, 0);
+    },
+    // Saved while typing; a new task is created as soon as it has a title.
+    autosave: {
+      collect: (f) => { readSubs(); const fd = new FormData(f); return String(fd.get('title')).trim() ? build(fd) : null; },
+      persist: (rec) => persist(rec),
     },
     onAction: async (name, el) => {
       if (name === 'sub-add') { readSubs(); addPendingSub(); drawSubs(); $('#sub-new', form).focus(); }
       if (name === 'sub-del') { readSubs(); subs.splice(Number(el.dataset.i), 1); drawSubs(); }
       if (name === 'sub-check') { subs[Number(el.dataset.i)].done = el.checked; }
+      if (name === 'discard') {
+        await form.discardAutosave();
+        if (savedId) await store.remove('tasks', savedId);
+        closeDialog();
+      }
       if (name === 'delete' && await confirmDialog(`Delete “${draft.title}”?`)) {
+        await form.discardAutosave(); // never re-save a deleted task
         await store.remove('tasks', draft.id);
         closeDialog();
         if (onDone) setTimeout(onDone, 0);
@@ -280,6 +275,34 @@ export function openTaskEditor(idOrDraft, onDone) {
     },
     onInput: (target) => { if (target.name === 'freq') showRepeat(); },
   });
+
+  // The id of this task once it exists (a new task gets one at its first save).
+  let savedId = existing?.id || null;
+  function build(fd) {
+    let dueDate = fd.get('due_date') || null;
+    const freq = fd.get('freq');
+    if (freq && !dueDate) dueDate = today(); // a repeating task needs a starting date
+    const recurrence = freq
+      ? anchorRule({ freq, interval: Number(fd.get('interval')) || 1, days: fd.getAll('days').map(Number) }, dueDate)
+      : null;
+    return {
+      ...draft,
+      title: String(fd.get('title')).trim(),
+      notes: String(fd.get('notes')),
+      category_id: fd.get('category_id') || null,
+      priority: Number(fd.get('priority')) || 0,
+      due_date: dueDate,
+      due_time: dueDate ? fd.get('due_time') || null : null,
+      recurrence,
+      idea_id: fd.has('idea_id') ? fd.get('idea_id') || null : draft.idea_id || null,
+      subtasks: subs.filter((s) => s.title.trim()).map((s) => ({ ...s })),
+    };
+  }
+  async function persist(rec) {
+    // Saves run one after another, so after the first one every save updates the same task.
+    const current = savedId ? store.get('tasks', savedId) : null;
+    savedId = await store.save('tasks', { ...rec, id: savedId || undefined, completed_at: current ? current.completed_at : rec.completed_at, last_completed_at: current ? current.last_completed_at : rec.last_completed_at }, space);
+  }
 
   function readSubs() {
     form.querySelectorAll('.sub-title').forEach((inp) => { const s = subs[Number(inp.dataset.i)]; if (s) s.title = inp.value; });

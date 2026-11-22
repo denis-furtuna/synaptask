@@ -15,10 +15,14 @@ const COLUMNS = {
     'recurrence', 'subtasks', 'completed_at', 'last_completed_at', 'source', 'position', 'created_at', 'deleted_at'],
   ideas: ['id', 'title', 'notes', 'stage', 'tags', 'links', 'position', 'created_at', 'deleted_at'],
   vault_items: ['id', 'ciphertext', 'iv', 'remind_at', 'created_at', 'deleted_at'],
+  shopping_categories: ['id', 'name', 'color', 'position', 'created_at', 'deleted_at'],
+  shopping_items: ['id', 'category_id', 'idea_id', 'title', 'quantity', 'notes', 'bought_at', 'source', 'position', 'created_at', 'deleted_at'],
 };
 const TABLES = Object.keys(COLUMNS);
 const DEFAULTS = {
   categories: { name: '', color: '#8792a3', position: 0 },
+  shopping_categories: { name: '', color: '#8792a3', position: 0 },
+  shopping_items: { category_id: null, idea_id: null, title: '', quantity: '', notes: '', bought_at: null, source: 'app', position: 0 },
   tasks: { category_id: null, idea_id: null, title: '', notes: '', priority: 0, due_date: null, due_time: null,
     remind_at: null, recurrence: null, subtasks: [], completed_at: null, last_completed_at: null, source: 'app', position: 0 },
   ideas: { title: '', notes: '', stage: 'idea', tags: [], links: [], position: 0 },
@@ -50,8 +54,16 @@ function cleanRule(r) {
 /** Coerce a record into the shape and limits the database accepts. */
 function sanitize(table, r) {
   const base = { ...r, created_at: iso(r.created_at) || nowIso(), deleted_at: iso(r.deleted_at) };
-  if (table === 'categories') {
+  if (table === 'categories' || table === 'shopping_categories') {
     return { ...base, name: str(r.name, 100), color: safeColor(r.color), position: int(r.position, -1e6, 1e6, 0) };
+  }
+  if (table === 'shopping_items') {
+    return {
+      ...base, category_id: idOk(r.category_id), idea_id: idOk(r.idea_id),
+      title: str(r.title, 300), quantity: str(r.quantity, 50), notes: str(r.notes, 5000),
+      bought_at: iso(r.bought_at), source: r.source === 'claude' ? 'claude' : 'app',
+      position: int(r.position, -1e6, 1e6, 0),
+    };
   }
   if (table === 'ideas') {
     return {
@@ -76,7 +88,7 @@ function sanitize(table, r) {
   return base;
 }
 
-const db = { categories: [], tasks: [], ideas: [], vault_items: [] };
+const db = { categories: [], tasks: [], ideas: [], vault_items: [], shopping_categories: [], shopping_items: [] };
 const work = { categories: [], tasks: [] };
 let ns = 'local';
 let syncTimer = null;
@@ -97,6 +109,26 @@ export function init(userId) {
   work.categories = [];
   work.tasks = [];
   if (!online && !ls.get(key('seeded')) && db.categories.length === 0) seed();
+  if (!online) seedShopping(); // online: after the first sync, so another device's list is seen first
+}
+
+/** Starter shopping categories, created once. The ids are derived from the account, so two devices
+ *  that both seed write the same rows instead of duplicates; a deleted starter stays deleted. */
+export const SHOPPING_STARTERS = [['Groceries', '#5bbf7a'], ['For projects', '#ff9d1e'], ['Fun', '#c98be0']];
+async function seedShopping() {
+  if (ls.get(key('shop-seeded')) || db.shopping_categories.length) return;
+  ls.set(key('shop-seeded'), true);
+  const now = nowIso();
+  for (const [i, [name, color]] of SHOPPING_STARTERS.entries()) {
+    const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ns}:shopping:${name}`))).slice(0, 16);
+    h[6] = (h[6] & 0x0f) | 0x40; h[8] = (h[8] & 0x3f) | 0x80;
+    const hex = [...h].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    if (db.shopping_categories.some((c) => c.id === id)) continue;
+    upsertLocal('shopping_categories', { ...DEFAULTS.shopping_categories, id, name, color, position: i, created_at: now, deleted_at: null });
+  }
+  changed();
+  scheduleSync();
 }
 
 function seed() {
@@ -189,6 +221,10 @@ export async function remove(table, id) {
     }
     if (table === 'ideas') {
       for (const t of db.tasks.filter((x) => alive(x) && x.idea_id === id)) upsertLocal('tasks', { ...publicFields(t), idea_id: null });
+      for (const s of db.shopping_items.filter((x) => alive(x) && x.idea_id === id)) upsertLocal('shopping_items', { ...publicFields(s), idea_id: null });
+    }
+    if (table === 'shopping_categories') {
+      for (const s of db.shopping_items.filter((x) => alive(x) && x.category_id === id)) upsertLocal('shopping_items', { ...publicFields(s), category_id: null });
     }
   }
   changed();
@@ -343,57 +379,27 @@ export async function sync() {
   setSyncState('syncing');
   let pulledVault = false;
   let anyChange = false;
+  let failed = null;
   try {
     for (const table of TABLES) {
-      // push local changes
-      const dirty = db[table].filter((r) => r._dirty);
-      for (let at = 0; at < dirty.length; at += 200) {
-        const batch = dirty.slice(at, at + 200);
-        const sent = batch.map((r) => ({ id: r.id, rev: r._rev }));
-        const rows = batch.map((r) => Object.fromEntries(COLUMNS[table].map((c) => [c, r[c] ?? null])));
-        const rejected = await pushRows(table, rows);
-        for (const s of sent) {
-          const r = db[table].find((x) => x.id === s.id);
-          if (r && r._rev === s.rev) delete r._dirty; // untouched while the request was in flight
-        }
-        if (rejected) bus.emit('sync-rejected', rejected);
-        persist(table);
+      // One table failing (for example a new table the server does not have yet) must not stop the others.
+      try {
+        const n = await syncTable(table);
+        if (n) { anyChange = true; if (table === 'vault_items') pulledVault = true; }
+      } catch (e) {
+        if (!navigator.onLine) throw e;
+        console.error(`sync failed for ${table}`, e);
+        failed = failed || e;
       }
-      // pull remote changes (small overlap so nothing committed concurrently is missed)
-      // Pages are keyed on (updated_at, id) so rows sharing a timestamp are never skipped.
-      let cursor = ls.get(key(`cursor:${table}`), '1970-01-01T00:00:00Z');
-      let lastId = null;
-      for (;;) {
-        let q = sb.from(table).select('*').order('updated_at').order('id').limit(500);
-        q = lastId
-          ? q.or(`updated_at.gt."${cursor}",and(updated_at.eq."${cursor}",id.gt.${lastId})`)
-          : q.gt('updated_at', cursor);
-        const { data, error } = await q;
-        if (error) throw error;
-        for (const remote of data) {
-          const i = db[table].findIndex((r) => r.id === remote.id);
-          if (i >= 0 && db[table][i]._dirty) continue; // local edit wins; it is pushed on the next pass
-          delete remote.user_id;
-          delete remote.reminded_at;
-          if (i >= 0) {
-            if (db[table][i].updated_at === remote.updated_at) continue;
-            db[table][i] = remote;
-          } else db[table].push(remote);
-          anyChange = true;
-          if (table === 'vault_items') pulledVault = true;
-        }
-        if (data.length) { cursor = data[data.length - 1].updated_at; lastId = data[data.length - 1].id; }
-        if (data.length < 500) break;
-      }
-      ls.set(key(`cursor:${table}`), new Date(new Date(cursor).getTime() - 5000).toISOString());
-      persist(table);
     }
     if (vault.isUnlocked()) {
       if (pulledVault) await rebuildWork();
       await importInbox();
     }
-    setSyncState('idle');
     if (anyChange) changed();
+    if (failed) throw failed;
+    setSyncState('idle');
+    seedShopping().catch(() => null); // only after a clean sync: another device's list is already here
   } catch (e) {
     console.error('sync failed', e);
     setSyncState(navigator.onLine ? 'error' : 'offline');
@@ -401,6 +407,53 @@ export async function sync() {
     syncing = false;
     if (syncAgain) { syncAgain = false; scheduleSync(200); }
   }
+}
+
+/** Push this table's local changes, then pull the remote ones. Returns how many rows changed locally. */
+async function syncTable(table) {
+  let changes = 0;
+  // push local changes
+  const dirty = db[table].filter((r) => r._dirty);
+  for (let at = 0; at < dirty.length; at += 200) {
+    const batch = dirty.slice(at, at + 200);
+    const sent = batch.map((r) => ({ id: r.id, rev: r._rev }));
+    const rows = batch.map((r) => Object.fromEntries(COLUMNS[table].map((c) => [c, r[c] ?? null])));
+    const rejected = await pushRows(table, rows);
+    for (const s of sent) {
+      const r = db[table].find((x) => x.id === s.id);
+      if (r && r._rev === s.rev) delete r._dirty; // untouched while the request was in flight
+    }
+    if (rejected) bus.emit('sync-rejected', rejected);
+    persist(table);
+  }
+  // pull remote changes (small overlap so nothing committed concurrently is missed)
+  // Pages are keyed on (updated_at, id) so rows sharing a timestamp are never skipped.
+  let cursor = ls.get(key(`cursor:${table}`), '1970-01-01T00:00:00Z');
+  let lastId = null;
+  for (;;) {
+    let q = sb.from(table).select('*').order('updated_at').order('id').limit(500);
+    q = lastId
+      ? q.or(`updated_at.gt."${cursor}",and(updated_at.eq."${cursor}",id.gt.${lastId})`)
+      : q.gt('updated_at', cursor);
+    const { data, error } = await q;
+    if (error) throw error;
+    for (const remote of data) {
+      const i = db[table].findIndex((r) => r.id === remote.id);
+      if (i >= 0 && db[table][i]._dirty) continue; // local edit wins; it is pushed on the next pass
+      delete remote.user_id;
+      delete remote.reminded_at;
+      if (i >= 0) {
+        if (db[table][i].updated_at === remote.updated_at) continue;
+        db[table][i] = remote;
+      } else db[table].push(remote);
+      changes++;
+    }
+    if (data.length) { cursor = data[data.length - 1].updated_at; lastId = data[data.length - 1].id; }
+    if (data.length < 500) break;
+  }
+  ls.set(key(`cursor:${table}`), new Date(new Date(cursor).getTime() - 5000).toISOString());
+  persist(table);
+  return changes;
 }
 
 // Postgres "data exception" (22xxx) and "integrity constraint" (23xxx) errors are about one row's contents.
@@ -431,7 +484,7 @@ export const pendingCount = () => TABLES.reduce((n, t) => n + db[t].filter((r) =
 export function importData(json) {
   if (!json || json.app !== 'synaptask') throw new Error('This is not a Synaptask backup file.');
   let n = 0;
-  for (const table of ['categories', 'ideas', 'tasks']) {
+  for (const table of ['categories', 'ideas', 'tasks', 'shopping_categories', 'shopping_items']) {
     for (const raw of Array.isArray(json[table]) ? json[table] : []) {
       if (!raw || !idOk(raw.id)) continue;
       const rec = { ...DEFAULTS[table] };
@@ -454,6 +507,7 @@ export function exportData() {
   return {
     app: 'synaptask', version: 1, exported_at: nowIso(),
     categories: clean(db.categories), tasks: clean(db.tasks), ideas: clean(db.ideas),
+    shopping_categories: clean(db.shopping_categories), shopping_items: clean(db.shopping_items),
     encrypted_work_items: clean(db.vault_items),
   };
 }
