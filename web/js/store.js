@@ -12,7 +12,7 @@ import { bus, ls, nowIso, uid, remindAt, safeColor, b64 } from './util.js';
 const COLUMNS = {
   categories: ['id', 'name', 'color', 'position', 'created_at', 'deleted_at'],
   tasks: ['id', 'category_id', 'idea_id', 'title', 'notes', 'priority', 'due_date', 'due_time', 'remind_at',
-    'recurrence', 'subtasks', 'completed_at', 'last_completed_at', 'source', 'position', 'created_at', 'deleted_at'],
+    'recurrence', 'subtasks', 'started_at', 'completed_at', 'last_completed_at', 'source', 'position', 'created_at', 'deleted_at'],
   ideas: ['id', 'title', 'notes', 'stage', 'tags', 'links', 'position', 'created_at', 'deleted_at'],
   vault_items: ['id', 'ciphertext', 'iv', 'remind_at', 'created_at', 'deleted_at'],
   shopping_categories: ['id', 'name', 'color', 'position', 'created_at', 'deleted_at'],
@@ -24,7 +24,7 @@ const DEFAULTS = {
   shopping_categories: { name: '', color: '#8792a3', position: 0 },
   shopping_items: { category_id: null, idea_id: null, title: '', quantity: '', notes: '', bought_at: null, source: 'app', position: 0 },
   tasks: { category_id: null, idea_id: null, title: '', notes: '', priority: 0, due_date: null, due_time: null,
-    remind_at: null, recurrence: null, subtasks: [], completed_at: null, last_completed_at: null, source: 'app', position: 0 },
+    remind_at: null, recurrence: null, subtasks: [], started_at: null, completed_at: null, last_completed_at: null, source: 'app', position: 0 },
   ideas: { title: '', notes: '', stage: 'idea', tags: [], links: [], position: 0 },
 };
 
@@ -81,7 +81,7 @@ function sanitize(table, r) {
       recurrence: cleanRule(r.recurrence),
       subtasks: arr(r.subtasks).filter((s) => s && typeof s === 'object').slice(0, 100)
         .map((s) => ({ id: str(s.id, 64) || uid(), title: str(s.title, 300), done: !!s.done })),
-      completed_at: iso(r.completed_at), last_completed_at: iso(r.last_completed_at),
+      started_at: iso(r.started_at), completed_at: iso(r.completed_at), last_completed_at: iso(r.last_completed_at),
       source: r.source === 'claude' ? 'claude' : 'app', position: int(r.position, -1e6, 1e6, 0),
     };
   }

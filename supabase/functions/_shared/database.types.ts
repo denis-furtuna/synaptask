@@ -10,7 +10,7 @@ type CategoryRow = Base & { name: string; color: string; position: number };
 type TaskRow = Base & {
   category_id: string | null; idea_id: string | null; title: string; notes: string; priority: number;
   due_date: string | null; due_time: string | null; remind_at: string | null; reminded_at: string | null;
-  recurrence: Json | null; subtasks: Json; completed_at: string | null; last_completed_at: string | null;
+  recurrence: Json | null; subtasks: Json; started_at: string | null; completed_at: string | null; last_completed_at: string | null;
   source: string; position: number;
 };
 type IdeaRow = Base & { title: string; notes: string; stage: string; tags: Json; links: Json; position: number };

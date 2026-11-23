@@ -67,6 +67,8 @@ Deno.test({ name: 'rls: every caller sees exactly what it should', sanitizeResou
   r = await as(userA, `insert into public.tasks (id, title, due_date, due_time, remind_at, subtasks, recurrence)
     values ('aaaaaaaa-0000-4000-8000-000000000002', 'Task A', '2026-11-20', '09:30', '2026-11-20T08:30:00Z', '[{"id":"s1","title":"x","done":false}]', '{"freq":"weekly","interval":1,"days":[1]}')`);
   ok(!r.error, `A inserts task: ${r.error?.message}`);
+  r = await as(userA, `update public.tasks set started_at = now() where id = 'aaaaaaaa-0000-4000-8000-000000000002' returning started_at`);
+  ok(!r.error && r.rows[0]?.started_at, `A marks a task ongoing (0007): ${r.error?.message}`);
   r = await as(userA, `insert into public.ideas (title, tags, links) values ('Idea A', '["pwa"]', '["https://example.com"]')`);
   ok(!r.error, `A inserts idea: ${r.error?.message}`);
   r = await as(userA, `insert into public.vaults (user_id, record, public_key) values ($1, '{"version":1}', '{"kty":"RSA","n":"x","e":"AQAB"}')`, [A]);

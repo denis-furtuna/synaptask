@@ -3,7 +3,7 @@ import * as store from './store.js';
 import * as vault from './vault.js';
 import { state, openDialog, closeDialog, flushDialog, rerender } from './app.js';
 import { esc, toast, ls, ICON, safeColor, ymd, today } from './util.js';
-import { viewModel, renderTasks } from './tasks.js';
+import { viewModel, renderTasks, taskLayout } from './tasks.js';
 
 // ---------------------------------------------------------------- Claude access (time-limited grants)
 
@@ -147,7 +147,7 @@ export function renderWork(route) {
       ${cats.map((c) => `<a class="pill ${route.id === c.id ? 'on' : ''}" href="#/work/cat/${esc(c.id)}"><i class="dot" style="background:${safeColor(c.color)}"></i>${esc(c.name)}</a>`).join('')}
       <button type="button" class="pill dashed" data-act="cats-manage" data-space="work">Edit categories</button>
     </nav>`;
-  return claudeBar() + chips + renderTasks(vm, 'No work tasks yet. Add one above, or ask Claude to send one here.');
+  return claudeBar() + chips + renderTasks(vm, 'No work tasks yet. Add one above, or ask Claude to send one here.', state.search.trim() ? 'list' : taskLayout());
 }
 
 export const forms = {

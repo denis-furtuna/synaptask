@@ -248,8 +248,26 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: .85; }
 .link-list { display: grid; gap: 4px; margin: -6px 0 14px; font-size: 13px; }
 .link-list a { overflow-wrap: anywhere; }
 
+/* task board: To do / Ongoing / Done */
+.board.board-3 { grid-template-columns: repeat(3, minmax(240px, 1fr)); }
+.task-card { background: var(--card); border-left-width: 1px; border-left-color: var(--line); padding: 9px 10px; }
+.task-card.pri-3 { border-left: 3px solid var(--danger); }
+.task-card.pri-2 { border-left: 3px solid var(--warn); }
+.task-card-top { display: flex; align-items: flex-start; gap: 10px; }
+.task-card.done .check { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.task-card.done .task-title { text-decoration: line-through; color: var(--muted); }
+.task-card .task-meta { margin-left: 32px; }
+.col[data-status="ongoing"] .group-h { color: var(--accent); }
+.chip.ongoing { background: var(--accent-soft); color: var(--accent); }
+
+/* List / Board switch */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; flex: none; }
+.seg button { background: transparent; border: 0; padding: 5px 12px; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
 @media (max-width: 860px) {
-  .board { grid-template-columns: repeat(4, 82%); overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 8px; margin: 0 -16px; padding-inline: 16px; }
+  .board { grid-template-columns: repeat(4, 82%); overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 8px; margin: 0 -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
+  .board.board-3 { grid-template-columns: repeat(3, 82%); }
   .col { scroll-snap-align: start; }
 }
 

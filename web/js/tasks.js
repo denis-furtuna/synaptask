@@ -1,10 +1,26 @@
 // Task lists and the task editor. Used for both the personal views and the Work section.
 import * as store from './store.js';
 import { state, openDialog, closeDialog, confirmDialog, rerender } from './app.js';
-import { esc, today, addDays, fmtDate, fmtLongDate, nowIso, safeColor, toast, ICON, uid, ymd, $ } from './util.js';
+import { esc, today, addDays, fmtDate, fmtLongDate, nowIso, safeColor, toast, ICON, uid, ymd, ls, $ } from './util.js';
 import { nextDue, anchorRule, describeRule } from './recurrence.js';
 
 const PRI = ['None', 'Low', 'Medium', 'High'];
+
+// Stages, like the project board. Done is completed_at; Ongoing is started_at without completed_at.
+export const STATUSES = [['todo', 'To do'], ['ongoing', 'Ongoing'], ['done', 'Done']];
+export const statusOf = (t) => (t.completed_at ? 'done' : t.started_at ? 'ongoing' : 'todo');
+
+/** Move a task to a stage. Done on a repeating task means "this occurrence": it moves to the next date. */
+export async function setStatus(id, status) {
+  const t = store.get('tasks', id);
+  if (!t || statusOf(t) === status) return;
+  if (status === 'done') return toggleTask(id);
+  await store.save('tasks', { ...t, completed_at: null, started_at: status === 'ongoing' ? t.started_at || nowIso() : null });
+}
+
+// List or board, remembered per device.
+const LAYOUT_KEY = 'synaptask:task-layout';
+export const taskLayout = () => (ls.get(LAYOUT_KEY, 'list') === 'board' ? 'board' : 'list');
 
 function sortTasks(a, b) {
   const da = a.due_date || '9999', dbb = b.due_date || '9999';
@@ -92,7 +108,8 @@ export function viewModel(route) {
   return { title, sub, groups, open, done, ctx, showCat, cats, space };
 }
 
-function taskRow(t, showCat) {
+/** The small labels under a task title. `board` leaves out what the column already says. */
+function taskChips(t, showCat, board = false) {
   const t0 = today();
   const id = esc(t.id);
   const isDone = !!t.completed_at;
@@ -100,6 +117,7 @@ function taskRow(t, showCat) {
   const idea = t.idea_id ? store.get('ideas', t.idea_id) : null;
   const subs = t.subtasks || [];
   const chips = [];
+  if (!board && !isDone && t.started_at) chips.push('<span class="chip ongoing">Ongoing</span>');
   if (t.due_date) {
     const cls = isDone ? '' : t.due_date < t0 ? 'overdue' : t.due_date === t0 ? 'due-today' : '';
     chips.push(`<span class="chip due ${cls}">${esc(fmtDate(t.due_date))}${t.due_time ? ` · ${esc(t.due_time)}` : ''}</span>`);
@@ -107,11 +125,21 @@ function taskRow(t, showCat) {
   if (t.recurrence) chips.push(`<span class="chip plain">${ICON.repeat}${esc(describeRule(t.recurrence))}</span>`);
   if (t.priority) chips.push(`<span class="chip pri p${Number(t.priority)}">${PRI[t.priority] || ''}</span>`);
   if (subs.length) {
-    chips.push(`<button type="button" class="chip plain as-btn" data-act="task-expand" data-id="${id}" aria-expanded="${state.expanded.has(t.id)}">${subs.filter((s) => s.done).length}/${subs.length} steps</button>`);
+    chips.push(board
+      ? `<span class="chip plain">${subs.filter((s) => s.done).length}/${subs.length} steps</span>`
+      : `<button type="button" class="chip plain as-btn" data-act="task-expand" data-id="${id}" aria-expanded="${state.expanded.has(t.id)}">${subs.filter((s) => s.done).length}/${subs.length} steps</button>`);
   }
   if (cat && showCat) chips.push(`<span class="chip plain"><i class="dot" style="background:${safeColor(cat.color)}"></i>${esc(cat.name)}</span>`);
   if (idea) chips.push(`<span class="chip plain">Idea · ${esc(idea.title)}</span>`);
   if (t.source === 'claude') chips.push('<span class="chip claude">from Claude</span>');
+  return chips;
+}
+
+function taskRow(t, showCat) {
+  const id = esc(t.id);
+  const isDone = !!t.completed_at;
+  const subs = t.subtasks || [];
+  const chips = taskChips(t, showCat);
 
   const subList = subs.length && state.expanded.has(t.id)
     ? `<li class="subs-wrap"><ul class="subs">${subs.map((s) => `<li><label class="${s.done ? 'sub-done' : ''}">
@@ -129,8 +157,58 @@ function taskRow(t, showCat) {
   </li>${subList}`;
 }
 
-/** HTML for the body of a task view (quick-add box, groups, completed list). */
-export function renderTasks(vm, emptyText) {
+const quickForm = () => `<form class="quick" data-form="quick-task" autocomplete="off">
+      <input id="quick-input" name="title" maxlength="500" placeholder="Add a task…  (press Enter)" aria-label="New task">
+      <button class="btn primary">Add</button>
+      <button type="button" class="btn ghost" data-act="task-new" title="Add with details">Details</button>
+    </form>`;
+
+/** List / Board switch for the page header. */
+export function layoutSwitch() {
+  const cur = taskLayout();
+  return `<div class="seg" role="group" aria-label="Layout">
+    <button type="button" class="${cur === 'list' ? 'on' : ''}" data-act="task-layout" data-layout="list" aria-pressed="${cur === 'list'}">List</button>
+    <button type="button" class="${cur === 'board' ? 'on' : ''}" data-act="task-layout" data-layout="board" aria-pressed="${cur === 'board'}">Board</button>
+  </div>`;
+}
+
+const BOARD_DONE_MAX = 30;
+
+/** The same tasks as the list, in three columns: To do, Ongoing, Done. Drag cards between them. */
+function renderBoard(vm) {
+  const cols = {
+    todo: vm.open.filter((t) => !t.started_at),
+    ongoing: vm.open.filter((t) => t.started_at),
+    done: vm.done,
+  };
+  const card = (t) => `<article class="idea-card task-card ${t.completed_at ? 'done' : ''} pri-${Number(t.priority) || 0}" draggable="true" data-kind="task" data-id="${esc(t.id)}">
+      <div class="task-card-top">
+        <button type="button" class="check" data-act="task-toggle" data-id="${esc(t.id)}" aria-label="${t.completed_at ? 'Mark as not done' : 'Mark as done'}">${ICON.check}</button>
+        <div class="task-main" data-act="task-open" data-id="${esc(t.id)}" role="button" tabindex="0"><div class="task-title">${esc(t.title)}</div></div>
+      </div>
+      ${(() => {
+        const c = taskChips(t, vm.showCat, true);
+        // One tap to start (touch screens cannot drag cards)
+        if (statusOf(t) === 'todo') c.unshift(`<button type="button" class="chip plain as-btn" data-act="task-start" data-id="${esc(t.id)}">▶ Start</button>`);
+        return c.length ? `<div class="task-meta">${c.join('')}</div>` : '';
+      })()}
+    </article>`;
+  const html = STATUSES.map(([key, label]) => {
+    const list = cols[key];
+    const shown = key === 'done' ? list.slice(0, BOARD_DONE_MAX) : list;
+    const more = list.length - shown.length;
+    return `<section class="col" data-status="${key}">
+      <h3 class="group-h">${label}<small>${list.length}</small></h3>
+      <div class="col-body">${shown.map(card).join('') || `<div class="col-empty">${key === 'ongoing' ? 'Drag a task here when you start it' : 'Drop tasks here'}</div>`}
+        ${more > 0 ? `<div class="col-empty">and ${more} older</div>` : ''}</div>
+    </section>`;
+  }).join('');
+  return `${quickForm()}<div class="board board-3">${html}</div>`;
+}
+
+/** HTML for the body of a task view (quick-add box, groups, completed list), or the board. */
+export function renderTasks(vm, emptyText, layout = 'list') {
+  if (layout === 'board') return renderBoard(vm);
   const groups = vm.groups.map((g) => `<section class="group">
       ${g.label ? `<h3 class="group-h">${g.color ? `<i class="dot" style="background:${safeColor(g.color)}"></i>` : ''}${esc(g.label)}<small>${g.tasks.length}</small></h3>` : ''}
       <ul class="tasks">${g.tasks.map((t) => taskRow(t, vm.showCat)).join('')}</ul>
@@ -140,11 +218,7 @@ export function renderTasks(vm, emptyText) {
     ? `<button type="button" class="link-btn" data-act="toggle-done">${state.showDone ? 'Hide' : 'Show'} completed (${vm.done.length})</button>
        ${state.showDone ? `<ul class="tasks">${vm.done.map((t) => taskRow(t, true)).join('')}</ul>` : ''}`
     : '';
-  return `<form class="quick" data-form="quick-task" autocomplete="off">
-      <input id="quick-input" name="title" maxlength="500" placeholder="Add a task…  (press Enter)" aria-label="New task">
-      <button class="btn primary">Add</button>
-      <button type="button" class="btn ghost" data-act="task-new" title="Add with details">Details</button>
-    </form>${groups}${empty}${done}`;
+  return `${quickForm()}${groups}${empty}${done}`;
 }
 
 export async function quickAdd(title, ctx) {
@@ -163,6 +237,7 @@ export async function toggleTask(id) {
     next.due_date = nextDue(t.due_date, t.recurrence, today());
     next.last_completed_at = nowIso();
     next.subtasks = (t.subtasks || []).map((s) => ({ ...s, done: false }));
+    next.started_at = null; // the next occurrence starts as To do
     toast(`Done. Next: ${fmtDate(next.due_date)}`);
   } else {
     next.completed_at = nowIso();
@@ -186,6 +261,8 @@ export const actions = {
   },
   'sub-toggle': (el) => toggleSub(el.dataset.id, el.dataset.sub),
   'toggle-done': () => { state.showDone = !state.showDone; rerender(); },
+  'task-start': (el) => setStatus(el.dataset.id, 'ongoing'),
+  'task-layout': (el) => { ls.set(LAYOUT_KEY, el.dataset.layout === 'board' ? 'board' : 'list'); rerender(); },
 };
 
 // ---------------------------------------------------------------- editor
@@ -218,9 +295,10 @@ export function openTaskEditor(idOrDraft, onDone) {
       <label class="field"><span>Title</span><input name="title" maxlength="500" value="${esc(draft.title || '')}" ${existing ? '' : 'autofocus'}></label>
       <label class="field"><span>Notes</span><textarea name="notes" rows="3" maxlength="20000">${esc(draft.notes || '')}</textarea></label>
       <div class="row">
-        <label class="field"><span>Category</span><select name="category_id">${opt('', 'No category', draft.category_id)}${cats.map((c) => opt(c.id, c.name, draft.category_id)).join('')}</select></label>
+        <label class="field"><span>Status</span><select name="status">${STATUSES.map(([k, l]) => opt(k, l, statusOf(draft))).join('')}</select></label>
         <label class="field"><span>Priority</span><select name="priority">${PRI.map((p, i) => opt(i, p, draft.priority || 0)).join('')}</select></label>
       </div>
+      <label class="field"><span>Category</span><select name="category_id">${opt('', 'No category', draft.category_id)}${cats.map((c) => opt(c.id, c.name, draft.category_id)).join('')}</select></label>
       <div class="row">
         <label class="field"><span>Due date</span><input type="date" name="due_date" value="${esc(draft.due_date || '')}"></label>
         <label class="field"><span>Time (optional)</span><input type="time" name="due_time" value="${esc(draft.due_time || '')}"></label>
@@ -285,8 +363,15 @@ export function openTaskEditor(idOrDraft, onDone) {
     const recurrence = freq
       ? anchorRule({ freq, interval: Number(fd.get('interval')) || 1, days: fd.getAll('days').map(Number) }, dueDate)
       : null;
+    // Status: keep the original start / finish time while the stage stays the same.
+    const cur = (savedId && store.get('tasks', savedId)) || draft;
+    const status = fd.get('status') || 'todo';
+    const started_at = status === 'todo' ? null : cur.started_at || nowIso();
+    const completed_at = status === 'done' ? cur.completed_at || nowIso() : null;
     return {
       ...draft,
+      started_at,
+      completed_at,
       title: String(fd.get('title')).trim(),
       notes: String(fd.get('notes')),
       category_id: fd.get('category_id') || null,
@@ -301,7 +386,7 @@ export function openTaskEditor(idOrDraft, onDone) {
   async function persist(rec) {
     // Saves run one after another, so after the first one every save updates the same task.
     const current = savedId ? store.get('tasks', savedId) : null;
-    savedId = await store.save('tasks', { ...rec, id: savedId || undefined, completed_at: current ? current.completed_at : rec.completed_at, last_completed_at: current ? current.last_completed_at : rec.last_completed_at }, space);
+    savedId = await store.save('tasks', { ...rec, id: savedId || undefined, last_completed_at: current ? current.last_completed_at : rec.last_completed_at }, space);
   }
 
   function readSubs() {

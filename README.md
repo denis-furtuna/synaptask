@@ -72,7 +72,8 @@ Work tasks live in a separate, locked section that is end-to-end encrypted on yo
 ### Features
 
 - **Tasks by category** with due dates and times, priorities, steps (subtasks) and daily, weekly,
-  monthly or yearly repeats.
+  monthly or yearly repeats. Each task is **To do, Ongoing or Done**; every task view can be a list or a board
+  with those three columns (drag cards on a computer, tap ▶ Start on a phone).
 - **Project ideas board** with the stages Idea → Planning → Building → Done. Each idea has notes,
   tags, links and its own task list.
 - **Shopping list** with your own categories (Groceries, For projects, Fun… editable); tick items off as you

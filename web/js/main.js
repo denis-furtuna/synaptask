@@ -117,7 +117,8 @@ function page(route) {
       if (open) {
         const vm = tasks.viewModel(route);
         title = vm.title; sub = vm.sub;
-        actions = `<button type="button" class="btn small" data-act="vault-lock">${ICON.lock}Lock</button>`;
+        actions = `${searching ? '' : tasks.layoutSwitch()}<button type="button" class="btn small" data-act="vault-lock">${ICON.lock}Lock</button>`;
+        wide = !searching && tasks.taskLayout() === 'board';
       } else {
         title = 'Work'; sub = 'End-to-end encrypted';
         showSearch = false;
@@ -132,7 +133,10 @@ function page(route) {
       if (route.view === 'cat' && !searching) {
         actions = `<button type="button" class="btn small ghost" data-act="cats-manage" data-space="personal">Edit categories</button>`;
       }
-      body = tasks.renderTasks(vm, searching ? 'No tasks match your search.' : EMPTY[route.view] || EMPTY.all);
+      const layout = searching ? 'list' : tasks.taskLayout();
+      if (!searching) actions = tasks.layoutSwitch() + actions;
+      wide = layout === 'board';
+      body = tasks.renderTasks(vm, searching ? 'No tasks match your search.' : EMPTY[route.view] || EMPTY.all, layout);
     }
   }
   const search = showSearch ? `<label class="search">${ICON.search}<span class="sr-only">Search</span>
@@ -303,12 +307,15 @@ function wireEvents() {
     window.scrollTo(0, 0);
   });
 
-  // Drag idea cards between stages (desktop; on touch screens use the Stage field in the editor).
+  // Drag idea cards between stages and task cards between To do / Ongoing / Done
+  // (desktop; on touch screens use the Stage / Status field in the editor).
   let dragId = null;
+  let dragKind = null;
   document.addEventListener('dragstart', (e) => {
     const card = e.target.closest?.('.idea-card');
     if (!card) return;
     dragId = card.dataset.id;
+    dragKind = card.dataset.kind === 'task' ? 'task' : 'idea';
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', dragId);
     card.classList.add('dragging');
@@ -317,8 +324,9 @@ function wireEvents() {
     dragId = null;
     document.querySelectorAll('.dragging, .col.drop').forEach((el) => el.classList.remove('dragging', 'drop'));
   });
+  const dropCol = (e) => e.target.closest?.(dragKind === 'task' ? '.col[data-status]' : '.col[data-stage]');
   document.addEventListener('dragover', (e) => {
-    const col = e.target.closest?.('.col[data-stage]');
+    const col = dropCol(e);
     if (!col || !dragId) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -326,13 +334,14 @@ function wireEvents() {
     col.classList.add('drop');
   });
   document.addEventListener('drop', (e) => {
-    const col = e.target.closest?.('.col[data-stage]');
+    const col = dropCol(e);
     if (!col || !dragId) return;
     e.preventDefault();
     const id = dragId;
     dragId = null;
     col.classList.remove('drop');
-    run(ideas.moveIdea, id, col.dataset.stage);
+    if (dragKind === 'task') run(tasks.setStatus, id, col.dataset.status);
+    else run(ideas.moveIdea, id, col.dataset.stage);
   });
 
   bus.on('render', scheduleRender);

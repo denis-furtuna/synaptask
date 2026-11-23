@@ -33,7 +33,8 @@ const UNTRUSTED = 'This connection is not on the trusted list in Synaptask, so i
 const PRIORITY = ['none', 'low', 'medium', 'high'] as const;
 const DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 const STAGES = ['idea', 'planning', 'building', 'done'] as const;
-const VIEWS = ['open', 'today', 'overdue', 'upcoming', 'inbox', 'completed', 'all'] as const;
+const VIEWS = ['open', 'today', 'overdue', 'upcoming', 'ongoing', 'inbox', 'completed', 'all'] as const;
+const STATUS = ['todo', 'ongoing', 'done'] as const;
 
 const id = z.uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
@@ -70,6 +71,8 @@ const updateFields = {
   steps: z.array(z.object({ title: z.string().min(1).max(300), done: z.boolean().default(false) })).max(100).optional(),
   add_steps: z.array(z.string().min(1).max(300)).max(100).optional(),
   completed: z.boolean().optional().describe('false re-opens a completed task. To complete, prefer the complete tool.'),
+  status: z.enum(STATUS).optional().describe('Stage, like on the board: todo, ongoing (started, in progress) or done. ' +
+    'done on a repeating task finishes this occurrence and moves it to the next date.'),
 };
 const UPDATE_HELP = 'Only the fields you pass change; pass null to clear a date, time, recurrence or category. ' +
   '`steps` replaces the whole step list; `add_steps` appends.';
@@ -83,13 +86,14 @@ type RuleIn = z.infer<typeof recurrence>;
 interface Task {
   id: string; title: string; notes: string; category_id: string | null; idea_id?: string | null; priority: number;
   due_date: string | null; due_time: string | null; recurrence: Rule | null; subtasks: Sub[];
-  completed_at: string | null; last_completed_at?: string | null; remind_at?: string | null; source?: string;
+  started_at?: string | null; completed_at: string | null; last_completed_at?: string | null; remind_at?: string | null; source?: string;
   [extra: string]: unknown;
 }
 type AddArgs = { title: string; notes?: string; priority?: (typeof PRIORITY)[number]; due_date?: string; due_time?: string; recurrence?: RuleIn; steps?: string[] };
 type UpdateArgs = {
   title?: string; notes?: string; priority?: (typeof PRIORITY)[number]; due_date?: string | null; due_time?: string | null;
   recurrence?: RuleIn | null; steps?: { title: string; done: boolean }[]; add_steps?: string[]; completed?: boolean;
+  status?: (typeof STATUS)[number];
 };
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 1) }] });
@@ -151,6 +155,7 @@ function taskOut(t: Task, cats: Cat[]) {
     ...(t.recurrence ? { repeats: describeRule(t.recurrence) } : {}),
     ...(t.subtasks.length ? { steps: t.subtasks.map((s) => ({ title: s.title, done: !!s.done })) } : {}),
     done: !!t.completed_at,
+    status: t.completed_at ? 'done' : t.started_at ? 'ongoing' : 'todo',
     ...(t.idea_id ? { idea_id: t.idea_id } : {}),
     ...(t.source === 'claude' ? { added_by_claude: true } : {}),
   };
@@ -189,13 +194,23 @@ function taskUpdate(t: Task, a: UpdateArgs, zone: string): Partial<Task> {
   if (rule && !due) due = todayIn(zone);
   if (rule && (a.recurrence !== undefined || a.due_date !== undefined)) rule = anchorRule(rule, due);
   const dueTime = due ? (a.due_time !== undefined ? a.due_time : t.due_time) : null;
+  const now = new Date().toISOString();
   let completedAt = t.completed_at;
+  let startedAt = t.started_at ?? null;
   if (a.completed === false) completedAt = null;
-  if (a.completed === true && !completedAt) completedAt = new Date().toISOString();
-  return {
-    ...patch, due_date: due, due_time: dueTime, recurrence: rule, completed_at: completedAt,
+  if (a.completed === true && !completedAt) completedAt = now;
+  if (a.status === 'todo') { startedAt = null; completedAt = null; }
+  if (a.status === 'ongoing') { startedAt = startedAt ?? now; completedAt = null; }
+  const out: Partial<Task> = {
+    ...patch, due_date: due, due_time: dueTime, recurrence: rule, started_at: startedAt, completed_at: completedAt,
     remind_at: completedAt ? null : remindAt(due, dueTime, zone),
   };
+  if (a.status === 'done' && !t.completed_at) {
+    // Same as completing: a repeating task moves to its next date, anything else is finished.
+    const subsNow = (out.subtasks as Sub[] | undefined) ?? t.subtasks;
+    return { ...out, ...taskCompletion({ ...t, ...out, subtasks: subsNow, completed_at: null } as Task, zone).patch };
+  }
+  return out;
 }
 
 /** Completing: a repeating task moves to its next date instead. */
@@ -204,7 +219,7 @@ function taskCompletion(t: Task, zone: string): { patch: Partial<Task>; message:
   if (t.recurrence) {
     const next = nextDue(t.due_date, t.recurrence, todayIn(zone));
     return {
-      patch: { due_date: next, last_completed_at: now, subtasks: t.subtasks.map((s) => ({ ...s, done: false })), remind_at: remindAt(next, t.due_time, zone) },
+      patch: { due_date: next, last_completed_at: now, started_at: null, subtasks: t.subtasks.map((s) => ({ ...s, done: false })), remind_at: remindAt(next, t.due_time, zone) },
       message: `Done. “${t.title}” repeats (${describeRule(t.recurrence)}); next due ${next}.`,
     };
   }
@@ -217,6 +232,7 @@ function inView(t: Task, view: (typeof VIEWS)[number], today: string): boolean {
   if (view === 'today') return !!t.due_date && t.due_date <= today;
   if (view === 'overdue') return !!t.due_date && t.due_date < today;
   if (view === 'upcoming') return !!t.due_date && t.due_date > today;
+  if (view === 'ongoing') return !!t.started_at;
   if (view === 'inbox') return !t.category_id;
   return true;
 }
@@ -378,7 +394,7 @@ Deno.serve(
         server.registerTool('list_tasks', {
           title: 'List tasks',
           description: 'List personal tasks. Views: open (default, all unfinished), today (due today or overdue), overdue, ' +
-            'upcoming (due after today), inbox (no category), completed, all. Dates are in the user\'s time zone.',
+            'upcoming (due after today), ongoing (started, in progress), inbox (no category), completed, all. Each task has a status: todo, ongoing or done. Dates are in the user\'s time zone.',
           inputSchema: z.object({
             view: viewArg,
             category: z.string().max(100).optional().describe('Category name or id'),

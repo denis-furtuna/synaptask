@@ -288,6 +288,31 @@ Deno.test({ name: 'mcp: work section with and without a grant', sanitizeResource
   assert(after.isError && /Allow/.test(after.text), 'expired grant -> locked again');
 });
 
+Deno.test({ name: 'mcp: task status (todo / ongoing / done)', sanitizeResources: false, sanitizeOps: false }, async () => {
+  const added = await call(token, 'add_task', { title: 'Write the report' });
+  assert(!added.isError && added.json.added.status === 'todo', `new task is todo: ${added.text}`);
+  const row = tables.tasks.find((r) => r.title === 'Write the report')!;
+  const started = await call(token, 'update_task', { id: row.id, status: 'ongoing' });
+  assert(!started.isError && started.json.updated.status === 'ongoing' && row.started_at && !row.completed_at, `ongoing: ${started.text}`);
+  const ongoing = await call(token, 'list_tasks', { view: 'ongoing' });
+  assert(ongoing.json.tasks?.length === 1 && ongoing.json.tasks[0].title === 'Write the report', `view ongoing: ${ongoing.text}`);
+  const firstStart = row.started_at;
+  await call(token, 'update_task', { id: row.id, status: 'ongoing', notes: 'x' });
+  assert(row.started_at === firstStart, 'ongoing again keeps the start time');
+  const back = await call(token, 'update_task', { id: row.id, status: 'todo' });
+  assert(back.json.updated.status === 'todo' && row.started_at === null, 'back to todo clears the start');
+  const done = await call(token, 'update_task', { id: row.id, status: 'done' });
+  assert(done.json.updated.status === 'done' && row.completed_at && row.remind_at === null, `done completes it: ${done.text}`);
+
+  const rep = await call(token, 'add_task', { title: 'Water the cactus', due_date: '2026-11-20', recurrence: { freq: 'weekly', days: ['fri'] } });
+  const rrow = tables.tasks.find((r) => r.title === 'Water the cactus')!;
+  await call(token, 'update_task', { id: rrow.id, status: 'ongoing' });
+  const repDone = await call(token, 'update_task', { id: rrow.id, status: 'done' });
+  assert(!repDone.isError && repDone.json.updated.status === 'todo' && rrow.completed_at === null && rrow.started_at === null && rrow.due_date !== '2026-11-20',
+    `done on a repeating task moves it to the next date as todo: ${repDone.text}`);
+  assert(!rep.isError, 'repeating task added');
+});
+
 Deno.test({ name: 'mcp: shopping list', sanitizeResources: false, sanitizeOps: false }, async () => {
   const added = await call(token, 'add_shopping_items', { items: [
     { title: 'Milk', quantity: '2 l', category: 'groceries' },

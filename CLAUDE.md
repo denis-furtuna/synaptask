@@ -27,6 +27,11 @@ the code. Read it fully before continuing. Delete the "Current status" section o
   (Rejected alternatives: typing an authenticator code into the chat, because the server would have to hold
   the work key permanently; and always open.)
 - Commits: never add Claude as co-author or any Claude attribution line (owner's explicit wish).
+- **Added 2026-11-23:** task stages like the project board, To do / Ongoing / Done (`tasks.started_at`, migration 0007;
+  Ongoing = started_at set and not completed). Every task view has a List / Board switch (remembered per device,
+  `synaptask:task-layout`; search always shows the list); cards drag between columns (`tasks.setStatus`), To do cards
+  have ▶ Start for touch screens, the editor has a Status field. Done on a repeating task = next occurrence, back to
+  To do. MCP: tasks report `status`, `list_tasks` view `ongoing`, `update_task` / `update_work_task` take `status`.
 - **Added 2026-11-23:** autosave in every editor (the owner lost notes by forgetting Save), and a **Shopping list**
   ("lista de cumpărături") with its own editable categories (starters: Groceries, For projects, Fun), items with
   quantity, notes and an optional project idea, ticked off as bought; Claude can list, add, update and remove items.
